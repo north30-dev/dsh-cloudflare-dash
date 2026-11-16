@@ -8,6 +8,7 @@ export const zh = {
   loading: '正在读取配置…',
   'step.token.title': '1. 创建只读 API Token',
   'step.token.desc': '在 Cloudflare 后台创建 API Token，只勾选 Read 权限。建议权限：',
+  'perm.list': 'Account Settings:Read · Account Analytics:Read（读取站点列表另需 Web Analytics:Read）',
   'step.token.console': '打开 Cloudflare API Token 页面',
   'step.token.placeholder': '粘贴 API Token',
   'step.token.save': '验证并保存',
@@ -40,6 +41,9 @@ export const zh = {
   'msg.deleted': '已删除保存的 Token',
   'error.generic': '请求失败',
   'error.missingHint': '缺少权限',
+  'warn.tokenId': '这看起来是 32 位 Token ID，不是 Token 值',
+  'warn.globalKey': '这看起来是 Global API Key，本插件只支持 API Token',
+  'hint.unauthorized': '请确认：① 复制的是创建完成时显示的 Token 值，不是 Token ID；② 创建流程已走完 Continue to summary → Create Token；③ 没有使用 Global API Key。',
 }
 
 export const en = {
@@ -49,6 +53,7 @@ export const en = {
   loading: 'Reading configuration…',
   'step.token.title': '1. Create a read-only API token',
   'step.token.desc': 'Create an API token in the Cloudflare dashboard with Read permissions only. Suggested permissions:',
+  'perm.list': 'Account Settings:Read · Account Analytics:Read (Web Analytics:Read is also needed to list sites)',
   'step.token.console': 'Open the Cloudflare API token page',
   'step.token.placeholder': 'Paste your API token',
   'step.token.save': 'Verify and save',
@@ -81,4 +86,7 @@ export const en = {
   'msg.deleted': 'Stored token removed',
   'error.generic': 'Request failed',
   'error.missingHint': 'Missing permission',
+  'warn.tokenId': 'This looks like a 32-character token ID, not the token value',
+  'warn.globalKey': 'This looks like the Global API Key; only API tokens are supported',
+  'hint.unauthorized': 'Check that you copied the token value shown after creation (not the token ID), that the create flow finished with Continue to summary → Create Token, and that you did not paste the Global API Key.',
 }

@@ -126,6 +126,10 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.cfd-warn {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 .cfd-link {
   font-size: 13px;
   color: var(--dsw-alias-brand-primary);

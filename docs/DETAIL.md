@@ -16,12 +16,18 @@
 
 ## 使用方法
 
-1. 创建只读 Token（`Account.Read`、`Account Analytics.Read`）。
+1. 创建只读 Token：Profile → API Tokens → Create Custom Token，勾选 `Account Settings:Read`、`Account Analytics:Read`、`Web Analytics:Read`，资源选自己的账户。
 2. 安装插件并刷新页面。
 3. 点侧边栏柱状图标，粘贴 Token，点「验证并保存」。
 4. 验证通过后面板显示账户与站点计数；点击「网络诊断」可确认当前链路质量。
 
 Token 只保存在本机 DSH 凭据库，浏览器与面板只看到掩码。也可通过启动环境变量 `CLOUDFLARE_API_TOKEN` 提供（UI 保存的记录优先）。
+
+### 常见失败
+
+- `Invalid API Token`：多半复制成了 32 位 Token ID、或创建流程未完成、或用了 Global API Key（37 位）；面板会在输入阶段提示这两种格式。
+- 账户级（Account-owned）Token 无法通过用户级校验接口，插件会退化为账户列表校验；仍失败时请改用用户级 Token。
+- 站点数为 0：账号未启用 Web Analytics，或 Token 缺少 `Web Analytics:Read`。
 
 ## 代理
 

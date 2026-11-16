@@ -106,6 +106,12 @@ function formatTime(value) {
     return null;
   }
 }
+function suspiciousToken(value) {
+  const trimmed = value.trim();
+  if (/^[0-9a-f]{32}$/i.test(trimmed)) return "token-id";
+  if (/^[0-9a-f]{37}$/i.test(trimmed)) return "global-key";
+  return null;
+}
 function Panel({ t }) {
   const [phase, setPhase] = (0, import_react.useState)("loading");
   const [status, setStatus] = (0, import_react.useState)(null);
@@ -139,9 +145,12 @@ function Panel({ t }) {
   function describeError(error) {
     const message = error instanceof Error ? error.message : String(error);
     const missing = Array.isArray(error?.missing) ? error.missing.filter((entry) => typeof entry === "string") : [];
-    if (missing.length === 0) return message;
-    return `${message}
+    let text = message;
+    if (missing.length > 0) text += `
 ${t("error.missingHint")}: ${missing.join("; ")}`;
+    if (error?.code === "unauthorized") text += `
+${t("hint.unauthorized")}`;
+    return text;
   }
   async function handleSave() {
     const value = token.trim();
@@ -193,7 +202,8 @@ ${t("error.missingHint")}: ${missing.join("; ")}`;
   const configured = status?.configured === true;
   const verifiedAt = formatTime(status?.verifiedAt);
   function renderTokenForm() {
-    return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-label" }, t("step.token.title")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-desc" }, t("step.token.desc"), " ", /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-desc" }, "Account.Read \xB7 Account Analytics.Read")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-row" }, /* @__PURE__ */ import_react.default.createElement(
+    const suspicious = suspiciousToken(token);
+    return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-label" }, t("step.token.title")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-desc" }, t("step.token.desc"), " ", /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-desc" }, t("perm.list"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-row" }, /* @__PURE__ */ import_react.default.createElement(
       "input",
       {
         className: "cfd-input",
@@ -207,7 +217,7 @@ ${t("error.missingHint")}: ${missing.join("; ")}`;
           if (event.key === "Enter") void handleSave();
         }
       }
-    ), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn cfd-btn--primary", disabled: busy, onClick: () => void handleSave() }, busy ? t("step.token.saving") : t("step.token.save"))), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("a", { className: "cfd-link", href: "https://dash.cloudflare.com/profile/api-tokens", target: "_blank", rel: "noreferrer" }, t("step.token.console"))));
+    ), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn cfd-btn--primary", disabled: busy, onClick: () => void handleSave() }, busy ? t("step.token.saving") : t("step.token.save"))), suspicious === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint cfd-warn" }, suspicious === "token-id" ? t("warn.tokenId") : t("warn.globalKey")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("a", { className: "cfd-link", href: "https://dash.cloudflare.com/profile/api-tokens", target: "_blank", rel: "noreferrer" }, t("step.token.console"))));
   }
   function renderProxy() {
     return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-label" }, t("step.proxy.title")), /* @__PURE__ */ import_react.default.createElement("label", { className: "cfd-check" }, /* @__PURE__ */ import_react.default.createElement(
@@ -272,6 +282,7 @@ var zh = {
   loading: "\u6B63\u5728\u8BFB\u53D6\u914D\u7F6E\u2026",
   "step.token.title": "1. \u521B\u5EFA\u53EA\u8BFB API Token",
   "step.token.desc": "\u5728 Cloudflare \u540E\u53F0\u521B\u5EFA API Token\uFF0C\u53EA\u52FE\u9009 Read \u6743\u9650\u3002\u5EFA\u8BAE\u6743\u9650\uFF1A",
+  "perm.list": "Account Settings:Read \xB7 Account Analytics:Read\uFF08\u8BFB\u53D6\u7AD9\u70B9\u5217\u8868\u53E6\u9700 Web Analytics:Read\uFF09",
   "step.token.console": "\u6253\u5F00 Cloudflare API Token \u9875\u9762",
   "step.token.placeholder": "\u7C98\u8D34 API Token",
   "step.token.save": "\u9A8C\u8BC1\u5E76\u4FDD\u5B58",
@@ -303,7 +314,10 @@ var zh = {
   "msg.saved": "\u9A8C\u8BC1\u901A\u8FC7\uFF0CToken \u5DF2\u4FDD\u5B58",
   "msg.deleted": "\u5DF2\u5220\u9664\u4FDD\u5B58\u7684 Token",
   "error.generic": "\u8BF7\u6C42\u5931\u8D25",
-  "error.missingHint": "\u7F3A\u5C11\u6743\u9650"
+  "error.missingHint": "\u7F3A\u5C11\u6743\u9650",
+  "warn.tokenId": "\u8FD9\u770B\u8D77\u6765\u662F 32 \u4F4D Token ID\uFF0C\u4E0D\u662F Token \u503C",
+  "warn.globalKey": "\u8FD9\u770B\u8D77\u6765\u662F Global API Key\uFF0C\u672C\u63D2\u4EF6\u53EA\u652F\u6301 API Token",
+  "hint.unauthorized": "\u8BF7\u786E\u8BA4\uFF1A\u2460 \u590D\u5236\u7684\u662F\u521B\u5EFA\u5B8C\u6210\u65F6\u663E\u793A\u7684 Token \u503C\uFF0C\u4E0D\u662F Token ID\uFF1B\u2461 \u521B\u5EFA\u6D41\u7A0B\u5DF2\u8D70\u5B8C Continue to summary \u2192 Create Token\uFF1B\u2462 \u6CA1\u6709\u4F7F\u7528 Global API Key\u3002"
 };
 var en = {
   "panel.label": "Cloudflare dashboard",
@@ -312,6 +326,7 @@ var en = {
   loading: "Reading configuration\u2026",
   "step.token.title": "1. Create a read-only API token",
   "step.token.desc": "Create an API token in the Cloudflare dashboard with Read permissions only. Suggested permissions:",
+  "perm.list": "Account Settings:Read \xB7 Account Analytics:Read (Web Analytics:Read is also needed to list sites)",
   "step.token.console": "Open the Cloudflare API token page",
   "step.token.placeholder": "Paste your API token",
   "step.token.save": "Verify and save",
@@ -343,11 +358,14 @@ var en = {
   "msg.saved": "Verification passed, token saved",
   "msg.deleted": "Stored token removed",
   "error.generic": "Request failed",
-  "error.missingHint": "Missing permission"
+  "error.missingHint": "Missing permission",
+  "warn.tokenId": "This looks like a 32-character token ID, not the token value",
+  "warn.globalKey": "This looks like the Global API Key; only API tokens are supported",
+  "hint.unauthorized": "Check that you copied the token value shown after creation (not the token ID), that the create flow finished with Continue to summary \u2192 Create Token, and that you did not paste the Global API Key."
 };
 
 // src/client/styles.css
-var styles_default = ".cfd-page {\n  box-sizing: border-box;\n  max-width: 760px;\n  padding: 28px 28px 40px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-head {\n  margin-bottom: 20px;\n}\n\n.cfd-title {\n  margin: 0;\n  font-size: 18px;\n  font-weight: 600;\n  line-height: 1.4;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-sub {\n  margin: 8px 0 0;\n  font-size: 13px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-card {\n  margin-top: 16px;\n  padding: 20px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 12px;\n  background: var(--dsw-alias-bg-layer-1);\n}\n\n.cfd-step + .cfd-step {\n  margin-top: 22px;\n  padding-top: 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n.cfd-label {\n  margin-bottom: 8px;\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-desc {\n  margin: 0 0 10px;\n  font-size: 12px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.cfd-input {\n  box-sizing: border-box;\n  flex: 1 1 260px;\n  min-width: 0;\n  height: 34px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  outline: none;\n}\n\n.cfd-input:focus {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn {\n  height: 32px;\n  padding: 0 14px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  cursor: pointer;\n}\n\n.cfd-btn:hover:not(:disabled) {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn--primary {\n  border-color: var(--dsw-alias-brand-primary);\n  background: var(--dsw-alias-brand-primary);\n  /* Theme-aware contrast: the label uses the base background, which is the\n     inverse of the brand fill in both light and dark themes. A literal #fff\n     disappears whenever the dark theme's brand accent is near-white. */\n  color: var(--dsw-alias-bg-base);\n}\n\n.cfd-btn:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n\n.cfd-check {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  font-size: 13px;\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n}\n\n.cfd-check input {\n  accent-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-hint {\n  margin: 8px 0 0;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-link {\n  font-size: 13px;\n  color: var(--dsw-alias-brand-primary);\n  text-decoration: none;\n}\n\n.cfd-link:hover {\n  text-decoration: underline;\n}\n\n.cfd-ok {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.cfd-error {\n  margin: 10px 0 0;\n  font-size: 13px;\n  line-height: 1.6;\n  color: var(--dsw-alias-state-error-primary);\n  white-space: pre-wrap;\n}\n\n.cfd-meta {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));\n  gap: 10px;\n  margin-top: 4px;\n}\n\n.cfd-metric {\n  padding: 12px;\n  border-radius: 10px;\n  background: var(--dsw-alias-bg-layer-2);\n}\n\n.cfd-metric-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 1.3;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-all;\n}\n\n.cfd-metric-value--small {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n.cfd-metric-label {\n  margin-top: 4px;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-actions {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n  margin-top: 16px;\n}\n\n.cfd-probe {\n  display: grid;\n  gap: 6px;\n  margin-top: 12px;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-probe-row {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.cfd-probe-name {\n  min-width: 56px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-icon {\n  display: block;\n}\n";
+var styles_default = ".cfd-page {\n  box-sizing: border-box;\n  max-width: 760px;\n  padding: 28px 28px 40px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-head {\n  margin-bottom: 20px;\n}\n\n.cfd-title {\n  margin: 0;\n  font-size: 18px;\n  font-weight: 600;\n  line-height: 1.4;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-sub {\n  margin: 8px 0 0;\n  font-size: 13px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-card {\n  margin-top: 16px;\n  padding: 20px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 12px;\n  background: var(--dsw-alias-bg-layer-1);\n}\n\n.cfd-step + .cfd-step {\n  margin-top: 22px;\n  padding-top: 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n.cfd-label {\n  margin-bottom: 8px;\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-desc {\n  margin: 0 0 10px;\n  font-size: 12px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.cfd-input {\n  box-sizing: border-box;\n  flex: 1 1 260px;\n  min-width: 0;\n  height: 34px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  outline: none;\n}\n\n.cfd-input:focus {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn {\n  height: 32px;\n  padding: 0 14px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  cursor: pointer;\n}\n\n.cfd-btn:hover:not(:disabled) {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn--primary {\n  border-color: var(--dsw-alias-brand-primary);\n  background: var(--dsw-alias-brand-primary);\n  /* Theme-aware contrast: the label uses the base background, which is the\n     inverse of the brand fill in both light and dark themes. A literal #fff\n     disappears whenever the dark theme's brand accent is near-white. */\n  color: var(--dsw-alias-bg-base);\n}\n\n.cfd-btn:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n\n.cfd-check {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  font-size: 13px;\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n}\n\n.cfd-check input {\n  accent-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-hint {\n  margin: 8px 0 0;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-warn {\n  color: var(--dsw-alias-state-warn-primary);\n}\n\n.cfd-link {\n  font-size: 13px;\n  color: var(--dsw-alias-brand-primary);\n  text-decoration: none;\n}\n\n.cfd-link:hover {\n  text-decoration: underline;\n}\n\n.cfd-ok {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.cfd-error {\n  margin: 10px 0 0;\n  font-size: 13px;\n  line-height: 1.6;\n  color: var(--dsw-alias-state-error-primary);\n  white-space: pre-wrap;\n}\n\n.cfd-meta {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));\n  gap: 10px;\n  margin-top: 4px;\n}\n\n.cfd-metric {\n  padding: 12px;\n  border-radius: 10px;\n  background: var(--dsw-alias-bg-layer-2);\n}\n\n.cfd-metric-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 1.3;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-all;\n}\n\n.cfd-metric-value--small {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n.cfd-metric-label {\n  margin-top: 4px;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-actions {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n  margin-top: 16px;\n}\n\n.cfd-probe {\n  display: grid;\n  gap: 6px;\n  margin-top: 12px;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-probe-row {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.cfd-probe-name {\n  min-width: 56px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-icon {\n  display: block;\n}\n";
 
 // src/client/index.jsx
 var inject = ["slots", "locale"];

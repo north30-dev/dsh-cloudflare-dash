@@ -24,16 +24,44 @@ export function maskToken(token) {
 
 /**
  * Validate a pasted Token before it is stored.
+ *
+ * Users paste a lot of things that are not a token value: a `Bearer ` prefix, a
+ * quoted string, the Token ID from the token's detail page, or the Global API
+ * Key. The first two are repaired here; the last two are refused with a message
+ * that names what was pasted instead of a bare length error.
  * @param {unknown} raw
  * @returns {string}
  */
 export function normalizeToken(raw) {
   if (typeof raw !== 'string') throw new Error('Token 必须是字符串')
-  const token = raw.trim()
+  let token = raw.trim()
+  if (token.startsWith('"') && token.endsWith('"')) token = token.slice(1, -1).trim()
+  if (token.startsWith("'") && token.endsWith("'")) token = token.slice(1, -1).trim()
+  token = token.replace(/^bearer\s+/i, '').trim()
   if (token === '') throw new Error('Token 为空')
   if (/\s/.test(token)) throw new Error('Token 中不能包含空白字符')
+  if (looksLikeTokenId(token)) throw new Error('这看起来是 32 位 Token ID，不是 Token 值；请复制创建时显示的 Token')
+  if (looksLikeGlobalKey(token)) throw new Error('这看起来是 Global API Key，本插件只支持 API Token')
   if (token.length < 20 || token.length > 200) throw new Error('Token 长度不合法，请检查是否复制完整')
   return token
+}
+
+/**
+ * Cloudflare token IDs are 32 hex characters; token values are not.
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function looksLikeTokenId(value) {
+  return /^[0-9a-f]{32}$/i.test(value)
+}
+
+/**
+ * The Global API Key is 37 hex characters.
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function looksLikeGlobalKey(value) {
+  return /^[0-9a-f]{37}$/i.test(value)
 }
 
 /**

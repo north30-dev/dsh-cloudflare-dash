@@ -91,6 +91,18 @@ function formatTime(value) {
 }
 
 /**
+ * Recognise the two values users most often paste instead of a token.
+ * @param {string} value
+ * @returns {'token-id' | 'global-key' | null}
+ */
+function suspiciousToken(value) {
+  const trimmed = value.trim()
+  if (/^[0-9a-f]{32}$/i.test(trimmed)) return 'token-id'
+  if (/^[0-9a-f]{37}$/i.test(trimmed)) return 'global-key'
+  return null
+}
+
+/**
  * @param {{ t: (key: string) => string }} props
  */
 export function Panel({ t }) {
@@ -132,8 +144,10 @@ export function Panel({ t }) {
   function describeError(error) {
     const message = error instanceof Error ? error.message : String(error)
     const missing = Array.isArray(error?.missing) ? error.missing.filter((entry) => typeof entry === 'string') : []
-    if (missing.length === 0) return message
-    return `${message}\n${t('error.missingHint')}: ${missing.join('; ')}`
+    let text = message
+    if (missing.length > 0) text += `\n${t('error.missingHint')}: ${missing.join('; ')}`
+    if (error?.code === 'unauthorized') text += `\n${t('hint.unauthorized')}`
+    return text
   }
 
   async function handleSave() {
@@ -190,11 +204,12 @@ export function Panel({ t }) {
   const verifiedAt = formatTime(status?.verifiedAt)
 
   function renderTokenForm() {
+    const suspicious = suspiciousToken(token)
     return (
       <div className="cfd-step">
         <div className="cfd-label">{t('step.token.title')}</div>
         <p className="cfd-desc">
-          {t('step.token.desc')} <span className="cfd-desc">Account.Read · Account Analytics.Read</span>
+          {t('step.token.desc')} <span className="cfd-desc">{t('perm.list')}</span>
         </p>
         <div className="cfd-row">
           <input
@@ -213,6 +228,9 @@ export function Panel({ t }) {
             {busy ? t('step.token.saving') : t('step.token.save')}
           </button>
         </div>
+        {suspicious === null ? null : (
+          <p className="cfd-hint cfd-warn">{suspicious === 'token-id' ? t('warn.tokenId') : t('warn.globalKey')}</p>
+        )}
         <p className="cfd-hint">
           <a className="cfd-link" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">
             {t('step.token.console')}

@@ -80,7 +80,8 @@ export async function callApi(path, options) {
   }
 
   if (response.status === 401) {
-    throw new CloudflareError('unauthorized', 'Token 无效或已被删除', { status: 401 })
+    const detail = describeEnvelope(payload).message
+    throw new CloudflareError('unauthorized', `Token 被 Cloudflare 拒绝（${detail}）`, { status: 401 })
   }
   if (response.status === 403) {
     const described = describeEnvelope(payload)
@@ -101,49 +102,89 @@ export async function callApi(path, options) {
 }
 
 /**
- * Verify a Token and report what it can reach.
+ * Count Web Analytics sites across the accounts the Token can see.
+ * A missing Web Analytics permission is reported, not thrown: the token is still
+ * valid and the dashboard can still show account-level state.
  * @param {{ token: string, proxy?: { host: string, port: number } }} options
- * @returns {Promise<{ accounts: number, rumSites: number, capabilities: { rum: boolean, zone: boolean } }>}
+ * @param {unknown[]} accountList
+ * @returns {Promise<{ rumSites: number, rumDenied: boolean }>}
  */
-export async function describeAccess(options) {
-  const verified = await callApi('/user/tokens/verify', options)
-  if (verified?.status !== 'active') {
-    throw new CloudflareError('inactive', 'Token 当前状态不是 active，请重新创建')
-  }
-
-  let accounts = []
+async function countRumSites(options, accountList) {
   let rumSites = 0
-  let rumError = null
-  try {
-    accounts = await callApi('/accounts?per_page=50', options)
-  } catch (error) {
-    if (!(error instanceof CloudflareError)) throw error
-    accounts = []
-    rumError = error
-  }
-  const accountList = Array.isArray(accounts) ? accounts : []
+  let rumDenied = false
   for (const account of accountList.slice(0, MAX_ACCOUNTS_PROBED)) {
     if (typeof account?.id !== 'string') continue
     try {
       const sites = await callApi(`/accounts/${account.id}/rum/site_info/list`, options)
       rumSites += Array.isArray(sites) ? sites.length : 0
     } catch (error) {
-      if (error instanceof CloudflareError && error.code !== 'forbidden') throw error
-      rumError = rumError ?? error
+      if (!(error instanceof CloudflareError)) throw error
+      if (error.code === 'forbidden') {
+        rumDenied = true
+        continue
+      }
+      throw error
     }
   }
+  return { rumSites, rumDenied }
+}
 
-  const capabilities = {
-    rum: rumSites > 0,
-    zone: accountList.length > 0,
-  }
-  if (!capabilities.rum && rumError instanceof CloudflareError) {
-    capabilities.rumDenied = true
-  }
+/**
+ * Build the access summary from an account list.
+ * @param {{ token: string, proxy?: { host: string, port: number } }} options
+ * @param {unknown[]} accountList
+ * @param {'user' | 'account'} ownership
+ */
+async function summarize(options, accountList, ownership) {
+  const { rumSites, rumDenied } = await countRumSites(options, accountList)
   return {
     accounts: accountList.length,
     rumSites,
-    capabilities,
-    ...(capabilities.rumDenied ? { hint: 'Token 缺少 Web Analytics 读取权限，或账号尚未启用 Web Analytics' } : {}),
+    ownership,
+    capabilities: { rum: rumSites > 0, zone: accountList.length > 0, rumDenied },
+    ...(rumSites === 0 && rumDenied
+      ? { hint: 'Token 缺少 Web Analytics 权限，或账号尚未启用 Web Analytics（站点列表不可读）' }
+      : {}),
   }
+}
+
+/**
+ * Verify a Token and report what it can reach.
+ *
+ * Two token kinds exist. A user-owned token verifies at `/user/tokens/verify`; an
+ * account-owned token answers 401 there but still works account-scoped, so a 401
+ * falls back to listing accounts and is only reported as invalid when that also
+ * fails. Distinguishing them here is what keeps "创建的令牌不生效" from being a
+ * dead end for users who picked the account-scoped create flow.
+ * @param {{ token: string, proxy?: { host: string, port: number } }} options
+ * @returns {Promise<{ accounts: number, rumSites: number, ownership: 'user' | 'account', capabilities: { rum: boolean, zone: boolean, rumDenied: boolean }, hint?: string }>}
+ */
+export async function describeAccess(options) {
+  let verified
+  try {
+    verified = await callApi('/user/tokens/verify', options)
+  } catch (error) {
+    if (!(error instanceof CloudflareError) || error.code !== 'unauthorized') throw error
+    let accounts
+    try {
+      accounts = await callApi('/accounts?per_page=50', options)
+    } catch (fallbackError) {
+      if (fallbackError instanceof CloudflareError) {
+        // An invalid token answers 401 here too, but Cloudflare sometimes says
+        // 403 "Invalid access token"; report those as the original 401 rather
+        // than as a permission problem. A genuine permission error keeps its 403.
+        if (fallbackError.code === 'unauthorized' || /invalid/i.test(fallbackError.message)) throw error
+      }
+      throw fallbackError
+    }
+    const accountList = Array.isArray(accounts) ? accounts : []
+    if (accountList.length === 0) throw error
+    return await summarize(options, accountList, 'account')
+  }
+
+  if (verified?.status !== 'active') {
+    throw new CloudflareError('inactive', 'Token 当前状态不是 active，请重新创建')
+  }
+  const accounts = await callApi('/accounts?per_page=50', options)
+  return await summarize(options, Array.isArray(accounts) ? accounts : [], 'user')
 }

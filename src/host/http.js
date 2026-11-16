@@ -291,7 +291,12 @@ export async function request(options) {
 
 /**
  * Measure reachability and stage timings for the Cloudflare API.
- * An unauthenticated request answers 401, which still proves the path works.
+ *
+ * The request carries no Authorization header on purpose: Cloudflare answers an
+ * unauthenticated `tokens/verify` with 4xx ("Invalid request headers" / "Invalid
+ * API Token"), which still proves DNS, TCP, TLS, and the round trip all work.
+ * Any 2xx–4xx answer therefore counts as reachable; only transport failures and
+ * 5xx do not.
  * @param {{ proxy?: { host: string, port: number } }} options
  * @returns {Promise<{ ok: boolean, status?: number, timings?: Record<string, number>, error?: { code: string, message: string } }>}
  */
@@ -304,7 +309,7 @@ export async function probe(options) {
       ...(options.proxy === undefined ? {} : { proxy: options.proxy }),
     })
     return {
-      ok: response.status === 200 || response.status === 401 || response.status === 403,
+      ok: response.status >= 200 && response.status < 500,
       status: response.status,
       timings: response.timings,
     }
