@@ -95,7 +95,10 @@
 .cfd-btn--primary {
   border-color: var(--dsw-alias-brand-primary);
   background: var(--dsw-alias-brand-primary);
-  color: #ffffff;
+  /* Theme-aware contrast: the label uses the base background, which is the
+     inverse of the brand fill in both light and dark themes. A literal #fff
+     disappears whenever the dark theme's brand accent is near-white. */
+  color: var(--dsw-alias-bg-base);
 }
 
 .cfd-btn:disabled {
