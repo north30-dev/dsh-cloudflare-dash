@@ -81,10 +81,23 @@ pnpm run build                       # 生成 dist/client.js
 ## 路线图
 
 - ✅ M1 配置闭环（Token UI、校验、代理、诊断）
-- ⬜ M2 RUM 数据层：账户/站点选择、Overview 四指标、时间序列、Top 路径/来源/国家
-- ⬜ M3 图表与表格、时间范围、缓存与后台刷新
+- ✅ M2 概览首屏：站点选择、24h/7d/30d、访问趋势曲线、热门页面/来源/国家/浏览器、Core Web Vitals（P75 + 分布）
+- ⬜ M3 缓存与后台刷新、设备/系统维度、加载性能（FCP/首屏）细节
 - ⬜ M4 单个聚合 agent 工具（不注入上下文，按需调用）
 - ⬜ M5 开源收尾（SECURITY.md、CI、发布）
+
+## 数据说明
+
+指标来自 Cloudflare **Web Analytics（RUM）** 数据集，已排除 bot 流量：
+
+| 展示项 | 来源 |
+|---|---|
+| 访问数 | `rumPageloadEventsAdaptiveGroups.sum.visits` |
+| 页面加载 | `rumPageloadEventsAdaptiveGroups.count` |
+| 热门页面 / 来源 / 国家 / 浏览器 | 同名维度分组 |
+| Core Web Vitals | `rumWebVitalsEventsAdaptiveGroups` 的 good/needs-improvement/poor 与 P75 分位数 |
+
+**不包含带宽/流量字节**：RUM 数据集没有该指标，官网 Web Analytics 的「Data served」无法等价复现，面板里也没有伪造。时间桶按 UTC 取回、按浏览器本地时区展示。
 
 ## 限制
 

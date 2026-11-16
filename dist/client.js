@@ -38,20 +38,19 @@ __export(index_exports, {
   inject: () => inject
 });
 module.exports = __toCommonJS(index_exports);
-var import_react2 = __toESM(require("react"), 1);
+var import_react5 = __toESM(require("react"), 1);
 
 // src/client/app.jsx
-var import_react = __toESM(require("react"), 1);
+var import_react4 = __toESM(require("react"), 1);
+
+// src/client/api.js
 var PROXY_STORAGE_KEY = "dsh-cloudflare-dash:proxy";
 var DEFAULT_PROXY_URL = "http://127.0.0.1:7890";
 function apiBase() {
   return new URL("cloudflare-dash/api/v1/", document.baseURI).toString();
 }
 async function callApi(path, options = {}) {
-  const init = {
-    method: options.method ?? "GET",
-    credentials: "same-origin"
-  };
+  const init = { method: options.method ?? "GET", credentials: "same-origin" };
   if (options.body !== void 0) {
     init.headers = { "content-type": "application/json" };
     init.body = JSON.stringify(options.body);
@@ -72,6 +71,7 @@ async function callApi(path, options = {}) {
     const error = new Error(payload?.error ?? `\u8BF7\u6C42\u5931\u8D25\uFF08HTTP ${response.status}\uFF09`);
     error.code = payload?.code;
     error.missing = payload?.missing;
+    error.status = response.status;
     throw error;
   }
   return payload ?? {};
@@ -95,6 +95,275 @@ function writeProxyPrefs(prefs) {
   } catch {
   }
 }
+function proxyQuery(proxy) {
+  if (proxy.enabled !== true) return "";
+  return `proxy=1&proxyUrl=${encodeURIComponent(proxy.url)}`;
+}
+
+// src/client/overview.jsx
+var import_react2 = __toESM(require("react"), 1);
+
+// src/client/chart.jsx
+var import_react = __toESM(require("react"), 1);
+
+// src/client/format.js
+function toNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+function fmtInt(value) {
+  return toNumber(value).toLocaleString("en-US");
+}
+function fmtCompact(value) {
+  if (value >= 1e6) return `${(value / 1e6).toFixed(value >= 1e7 ? 0 : 1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(value >= 1e4 ? 0 : 1)}k`;
+  return String(Math.round(value));
+}
+function fmtDelta(current, previous) {
+  const now = toNumber(current);
+  const before = toNumber(previous);
+  if (before === 0) return { pct: now === 0 ? 0 : null, dir: now === 0 ? "flat" : "up" };
+  const pct = (now - before) / before * 100;
+  if (Math.abs(pct) < 0.05) return { pct: 0, dir: "flat" };
+  return { pct, dir: pct > 0 ? "up" : "down" };
+}
+function fmtDuration(microseconds) {
+  if (typeof microseconds !== "number" || !Number.isFinite(microseconds)) return "\u2014";
+  const ms = microseconds / 1e3;
+  if (ms >= 1e3) return `${(ms / 1e3).toFixed(2)} s`;
+  if (ms >= 100) return `${Math.round(ms)} ms`;
+  return `${ms.toFixed(1)} ms`;
+}
+function fmtRatio(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "\u2014";
+  return value.toFixed(2);
+}
+function fmtBucket(iso, step, withDate) {
+  if (iso === "") return "";
+  if (step === "day") {
+    const [, month, day] = iso.split("-");
+    return `${month}-${day}`;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const hh = String(date.getHours()).padStart(2, "0");
+  const label = `${hh}:00`;
+  if (!withDate) return label;
+  return `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, "0")} ${label}`;
+}
+
+// src/client/chart.jsx
+var WIDTH = 760;
+var HEIGHT = 240;
+var PAD = { left: 44, right: 16, top: 16, bottom: 28 };
+function niceMax(value) {
+  if (value <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return step * magnitude;
+}
+function TrendChart({ points, labels }) {
+  const [hover, setHover] = (0, import_react.useState)(-1);
+  const innerWidth = WIDTH - PAD.left - PAD.right;
+  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
+  if (points.length === 0) {
+    return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-chart-empty" }, labels.empty);
+  }
+  const peak = Math.max(1, ...points.map((point) => Math.max(point.visits, point.pageLoads)));
+  const max = niceMax(peak);
+  const xOf = (index) => {
+    if (points.length === 1) return PAD.left + innerWidth / 2;
+    return PAD.left + index / (points.length - 1) * innerWidth;
+  };
+  const yOf = (value) => PAD.top + innerHeight - value / max * innerHeight;
+  const visitsLine = points.map((point, index) => `${index === 0 ? "M" : "L"}${xOf(index)},${yOf(point.visits)}`).join(" ");
+  const visitsArea = `${visitsLine} L${xOf(points.length - 1)},${PAD.top + innerHeight} L${xOf(0)},${PAD.top + innerHeight} Z`;
+  const loadsLine = points.map((point, index) => `${index === 0 ? "M" : "L"}${xOf(index)},${yOf(point.pageLoads)}`).join(" ");
+  const gridValues = [0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(max * fraction));
+  const active = hover >= 0 && hover < points.length ? points[hover] : null;
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-chart" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-legend" }, /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-legend-item" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--area" }), labels.visits), /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-legend-item" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--line" }), labels.pageLoads)), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-chart-plot" }, /* @__PURE__ */ import_react.default.createElement("svg", { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, className: "cfd-chart-svg", role: "img" }, /* @__PURE__ */ import_react.default.createElement("defs", null, /* @__PURE__ */ import_react.default.createElement("linearGradient", { id: "cfd-area", x1: "0", y1: "0", x2: "0", y2: "1" }, /* @__PURE__ */ import_react.default.createElement("stop", { offset: "0%", stopColor: "var(--dsw-alias-brand-primary)", stopOpacity: "0.28" }), /* @__PURE__ */ import_react.default.createElement("stop", { offset: "100%", stopColor: "var(--dsw-alias-brand-primary)", stopOpacity: "0.02" }))), gridValues.map((value) => /* @__PURE__ */ import_react.default.createElement("g", { key: value }, /* @__PURE__ */ import_react.default.createElement(
+    "line",
+    {
+      x1: PAD.left,
+      x2: WIDTH - PAD.right,
+      y1: yOf(value),
+      y2: yOf(value),
+      className: "cfd-grid-line"
+    }
+  ), /* @__PURE__ */ import_react.default.createElement("text", { x: PAD.left - 8, y: yOf(value) + 4, className: "cfd-axis-label", textAnchor: "end" }, fmtCompact(value)))), /* @__PURE__ */ import_react.default.createElement("path", { d: visitsArea, fill: "url(#cfd-area)" }), /* @__PURE__ */ import_react.default.createElement("path", { d: visitsLine, className: "cfd-line cfd-line--area" }), /* @__PURE__ */ import_react.default.createElement("path", { d: loadsLine, className: "cfd-line cfd-line--loads" }), active === null ? null : /* @__PURE__ */ import_react.default.createElement("g", null, /* @__PURE__ */ import_react.default.createElement(
+    "line",
+    {
+      x1: xOf(hover),
+      x2: xOf(hover),
+      y1: PAD.top,
+      y2: PAD.top + innerHeight,
+      className: "cfd-hover-line"
+    }
+  ), /* @__PURE__ */ import_react.default.createElement("circle", { cx: xOf(hover), cy: yOf(active.visits), r: "4", className: "cfd-dot cfd-dot--visits" }), /* @__PURE__ */ import_react.default.createElement("circle", { cx: xOf(hover), cy: yOf(active.pageLoads), r: "4", className: "cfd-dot cfd-dot--loads" })), points.map((point, index) => /* @__PURE__ */ import_react.default.createElement(
+    "rect",
+    {
+      key: point.label,
+      x: xOf(index) - innerWidth / Math.max(points.length, 1) / 2,
+      y: PAD.top,
+      width: Math.max(innerWidth / Math.max(points.length, 1), 8),
+      height: innerHeight,
+      fill: "transparent",
+      onMouseEnter: () => setHover(index),
+      onMouseLeave: () => setHover(-1)
+    }
+  )), points.map((point, index) => {
+    const showLabel = points.length <= 12 || index === 0 || index === points.length - 1 || index === Math.floor(points.length / 2);
+    if (!showLabel) return null;
+    return /* @__PURE__ */ import_react.default.createElement("text", { key: `x-${point.label}`, x: xOf(index), y: HEIGHT - 8, className: "cfd-axis-label", textAnchor: "middle" }, point.label);
+  })), active === null ? null : /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip", style: { left: `${xOf(hover) / WIDTH * 100}%` } }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-title" }, active.label), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-row" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--area" }), labels.visits, /* @__PURE__ */ import_react.default.createElement("b", null, fmtInt(active.visits))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-row" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--line" }), labels.pageLoads, /* @__PURE__ */ import_react.default.createElement("b", null, fmtInt(active.pageLoads))))));
+}
+
+// src/client/overview.jsx
+var RANGE_OPTIONS = ["24h", "7d", "30d"];
+function Overview({ t, proxy, onOpenSettings }) {
+  const [sites, setSites] = (0, import_react2.useState)([]);
+  const [siteTag, setSiteTag] = (0, import_react2.useState)("");
+  const [range, setRange] = (0, import_react2.useState)("7d");
+  const [data, setData] = (0, import_react2.useState)(null);
+  const [loading, setLoading] = (0, import_react2.useState)(true);
+  const [error, setError] = (0, import_react2.useState)(null);
+  const [sitesError, setSitesError] = (0, import_react2.useState)(null);
+  const proxyArgs = proxyQuery(proxy);
+  (0, import_react2.useEffect)(() => {
+    let cancelled = false;
+    const query = proxyArgs === "" ? "" : `?${proxyArgs}`;
+    callApi(`sites${query}`).then((payload) => {
+      if (cancelled) return;
+      const list = Array.isArray(payload.sites) ? payload.sites : [];
+      setSites(list);
+      if (list.length > 0) setSiteTag(list[0].siteTag);
+      else setLoading(false);
+    }).catch((loadError) => {
+      if (cancelled) return;
+      setSitesError(loadError.message);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [proxyArgs]);
+  const load = (0, import_react2.useCallback)(() => {
+    if (siteTag === "") return;
+    setLoading(true);
+    setError(null);
+    const params = [`siteTag=${encodeURIComponent(siteTag)}`, `range=${range}`];
+    if (proxyArgs !== "") params.push(proxyArgs);
+    callApi(`overview?${params.join("&")}`).then((payload) => {
+      setData(payload);
+      setLoading(false);
+    }).catch((loadError) => {
+      setError(loadError.message);
+      setLoading(false);
+    });
+  }, [siteTag, range, proxyArgs]);
+  (0, import_react2.useEffect)(() => {
+    load();
+  }, [load]);
+  const points = (0, import_react2.useMemo)(() => {
+    if (data === null) return [];
+    const step = data.range === "24h" ? "hour" : "day";
+    return data.series.map((point) => ({
+      label: fmtBucket(point.t, step, false),
+      visits: point.visits,
+      pageLoads: point.pageLoads
+    }));
+  }, [data]);
+  const site = data?.site ?? sites.find((entry) => entry.siteTag === siteTag);
+  const currentSite = site?.siteTag === siteTag ? site : void 0;
+  if (sitesError !== null) {
+    return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-page cfd-page--wide" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-empty-card" }, /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-empty-title" }, t("overview.loadFailed")), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-error" }, sitesError), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", onClick: onOpenSettings }, t("overview.settings"))));
+  }
+  if (!loading && sites.length === 0) {
+    return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-page cfd-page--wide" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-empty-card" }, /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-empty-title" }, t("overview.noSites")), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-hint" }, t("overview.noSitesHint")), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", onClick: onOpenSettings }, t("overview.settings"))));
+  }
+  const totals = data?.totals ?? { visits: 0, pageLoads: 0 };
+  const previous = data?.previous ?? { visits: 0, pageLoads: 0 };
+  const top = data?.top ?? { paths: [], referrers: [], countries: [], browsers: [], devices: [] };
+  const vitals = data?.vitals ?? null;
+  const visitsDelta = fmtDelta(totals.visits, previous.visits);
+  const loadsDelta = fmtDelta(totals.pageLoads, previous.pageLoads);
+  return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-page cfd-page--wide" }, /* @__PURE__ */ import_react2.default.createElement("header", { className: "cfd-topbar" }, /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h2", { className: "cfd-title" }, t("overview.title")), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-sub" }, currentSite === void 0 ? t("overview.loading") : currentSite.host)), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-toolbar" }, /* @__PURE__ */ import_react2.default.createElement("select", { className: "cfd-select", value: range, onChange: (event) => setRange(event.target.value) }, RANGE_OPTIONS.map((option) => /* @__PURE__ */ import_react2.default.createElement("option", { key: option, value: option }, t(`range.${option}`)))), /* @__PURE__ */ import_react2.default.createElement(
+    "select",
+    {
+      className: "cfd-select",
+      value: siteTag,
+      onChange: (event) => setSiteTag(event.target.value),
+      disabled: sites.length <= 1
+    },
+    sites.map((entry) => /* @__PURE__ */ import_react2.default.createElement("option", { key: entry.siteTag, value: entry.siteTag }, entry.host))
+  ), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", disabled: loading, onClick: load }, loading ? t("overview.refreshing") : t("overview.refresh")), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", onClick: onOpenSettings }, t("overview.settings")))), error === null ? null : /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-error" }, error), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-kpi-row" }, /* @__PURE__ */ import_react2.default.createElement(
+    KpiCard,
+    {
+      label: t("kpi.visits"),
+      value: fmtInt(totals.visits),
+      delta: visitsDelta,
+      deltaLabel: t("kpi.previous")
+    }
+  ), /* @__PURE__ */ import_react2.default.createElement(
+    KpiCard,
+    {
+      label: t("kpi.pageLoads"),
+      value: fmtInt(totals.pageLoads),
+      delta: loadsDelta,
+      deltaLabel: t("kpi.previous")
+    }
+  ), /* @__PURE__ */ import_react2.default.createElement(
+    KpiCard,
+    {
+      label: t("kpi.countries"),
+      value: fmtInt(top.countries.length),
+      hint: top.countries[0] === void 0 ? t("kpi.noData") : top.countries[0].name
+    }
+  ), /* @__PURE__ */ import_react2.default.createElement(
+    KpiCard,
+    {
+      label: t("kpi.referrers"),
+      value: fmtInt(top.referrers.filter((row) => row.name !== "").length),
+      hint: t("kpi.referrersHint")
+    }
+  )), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("chart.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("chart.sub"))), /* @__PURE__ */ import_react2.default.createElement(
+    TrendChart,
+    {
+      points,
+      labels: { visits: t("chart.visits"), pageLoads: t("chart.pageLoads"), empty: t("chart.empty") }
+    }
+  )), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-grid-2" }, /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.paths"), rows: top.paths, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.referrers"), rows: top.referrers, t, directLabel: t("list.direct") }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.countries"), rows: top.countries, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.browsers"), rows: top.browsers, t })), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("vitals.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("vitals.sub"))), vitals === null ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-hint" }, t("vitals.empty")) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vitals" }, /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "LCP", value: fmtDuration(vitals.lcp.p75), metric: vitals.lcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "INP", value: fmtDuration(vitals.inp.p75), metric: vitals.inp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "CLS", value: fmtRatio(vitals.cls.p75), metric: vitals.cls, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "FCP", value: fmtDuration(vitals.fcp.p75), metric: vitals.fcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "TTFB", value: fmtDuration(vitals.ttfb.p75), metric: vitals.ttfb, t })), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-foot" }, t("vitals.note"))), /* @__PURE__ */ import_react2.default.createElement("footer", { className: "cfd-foot" }, t("overview.footer"), data === null ? "" : ` \xB7 ${new Date(data.generatedAt).toLocaleTimeString()}`));
+}
+function KpiCard({ label, value, delta, deltaLabel, hint }) {
+  const hasDelta = delta !== void 0;
+  const deltaText = delta === void 0 ? "" : delta.pct === null ? "\u2014" : `${delta.pct > 0 ? "+" : ""}${delta.pct.toFixed(1)}%`;
+  return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-kpi" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-kpi-label" }, label), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-kpi-value" }, value), hasDelta ? /* @__PURE__ */ import_react2.default.createElement("div", { className: `cfd-kpi-delta cfd-kpi-delta--${delta.dir}` }, delta.dir === "up" ? "\u25B2" : delta.dir === "down" ? "\u25BC" : "\u2022", " ", deltaText, /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-kpi-delta-note" }, deltaLabel)) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-kpi-hint" }, hint ?? ""));
+}
+function ListCard({ title, rows, t, directLabel }) {
+  const visible = rows.slice(0, 5);
+  const max = Math.max(1, ...visible.map((row) => row.pageLoads));
+  return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, title), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("list.count"))), visible.length === 0 ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-hint" }, t("list.empty")) : /* @__PURE__ */ import_react2.default.createElement("ul", { className: "cfd-list" }, visible.map((row) => {
+    const name = row.name === "" ? directLabel ?? t("list.direct") : row.name;
+    return /* @__PURE__ */ import_react2.default.createElement("li", { className: "cfd-list-row", key: `${name}-${row.name === "" ? "direct" : ""}` }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-list-head" }, /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-list-name", title: name }, name), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-list-value" }, fmtInt(row.pageLoads))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-bar" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-bar-fill", style: { width: `${Math.max(3, row.pageLoads / max * 100)}%` } })), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-list-sub" }, fmtInt(row.visits), " ", t("list.visits")));
+  })));
+}
+function VitalTile({ label, value, metric, t }) {
+  const total = Math.max(metric.total, metric.good + metric.needs + metric.poor);
+  const share = (count) => total === 0 ? 0 : count / total * 100;
+  return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-head" }, /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-vital-name" }, label), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-vital-value" }, value)), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-bar" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-good", style: { width: `${share(metric.good)}%` } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-needs", style: { width: `${share(metric.needs)}%` } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-poor", style: { width: `${share(metric.poor)}%` } })), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-foot" }, total === 0 ? t("vitals.noSamples") : `${Math.round(share(metric.good))}% ${t("vitals.good")} \xB7 ${fmtInt(total)} ${t("vitals.samples")}`));
+}
+
+// src/client/settings.jsx
+var import_react3 = __toESM(require("react"), 1);
+function suspiciousToken(value) {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  if (/^cfat[-_]/i.test(trimmed)) return "account-token";
+  if (/^[0-9a-f]{32}$/i.test(trimmed)) return "token-id";
+  if (/^[0-9a-f]{37}$/i.test(trimmed)) return "global-key";
+  if (trimmed.length !== 40) return "bad-length";
+  return null;
+}
 function formatMs(value) {
   return typeof value === "number" ? `${value} ms` : "\u2014";
 }
@@ -106,46 +375,18 @@ function formatTime(value) {
     return null;
   }
 }
-function suspiciousToken(value) {
-  const trimmed = value.trim();
-  if (trimmed === "") return null;
-  if (/^cfat[-_]/i.test(trimmed)) return "account-token";
-  if (/^[0-9a-f]{32}$/i.test(trimmed)) return "token-id";
-  if (/^[0-9a-f]{37}$/i.test(trimmed)) return "global-key";
-  if (trimmed.length !== 40) return "bad-length";
-  return null;
-}
-function Panel({ t }) {
-  const [phase, setPhase] = (0, import_react.useState)("loading");
-  const [status, setStatus] = (0, import_react.useState)(null);
-  const [busy, setBusy] = (0, import_react.useState)(false);
-  const [probing, setProbing] = (0, import_react.useState)(false);
-  const [token, setToken] = (0, import_react.useState)("");
-  const [accountId, setAccountId] = (0, import_react.useState)("");
-  const [replacing, setReplacing] = (0, import_react.useState)(false);
-  const [proxyEnabled, setProxyEnabled] = (0, import_react.useState)(false);
-  const [proxyUrl, setProxyUrl] = (0, import_react.useState)(DEFAULT_PROXY_URL);
-  const [notice, setNotice] = (0, import_react.useState)(null);
-  const [probeResult, setProbeResult] = (0, import_react.useState)(null);
-  (0, import_react.useEffect)(() => {
-    const prefs = readProxyPrefs();
-    setProxyEnabled(prefs.enabled);
-    setProxyUrl(prefs.url);
-    let cancelled = false;
-    callApi("status").then((data) => {
-      if (cancelled) return;
-      setStatus(data);
-      if (typeof data.accountId === "string") setAccountId(data.accountId);
-      setPhase("ready");
-    }).catch((error) => {
-      if (cancelled) return;
-      setNotice({ kind: "error", text: error.message });
-      setPhase("ready");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+function SettingsView({ t, status, onStatus, onClose }) {
+  const [token, setToken] = (0, import_react3.useState)("");
+  const [accountId, setAccountId] = (0, import_react3.useState)(typeof status?.accountId === "string" ? status.accountId : "");
+  const [proxyEnabled, setProxyEnabled] = (0, import_react3.useState)(() => readProxyPrefs().enabled);
+  const [proxyUrl, setProxyUrl] = (0, import_react3.useState)(() => readProxyPrefs().url || DEFAULT_PROXY_URL);
+  const [busy, setBusy] = (0, import_react3.useState)(false);
+  const [probing, setProbing] = (0, import_react3.useState)(false);
+  const [replacing, setReplacing] = (0, import_react3.useState)(false);
+  const [notice, setNotice] = (0, import_react3.useState)(null);
+  const [probeResult, setProbeResult] = (0, import_react3.useState)(null);
+  const configured = status?.configured === true;
+  const showTokenForm = !configured || replacing;
   const proxy = () => ({ enabled: proxyEnabled, url: proxyUrl });
   function describeError(error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -157,7 +398,7 @@ ${t("error.missingHint")}: ${missing.join("; ")}`;
 ${t("hint.unauthorized")}`;
     return text;
   }
-  async function handleSave() {
+  async function save() {
     const value = token.trim();
     if (value === "") {
       setNotice({ kind: "error", text: t("step.token.placeholder") });
@@ -166,11 +407,11 @@ ${t("hint.unauthorized")}`;
     setBusy(true);
     setNotice(null);
     try {
-      const data = await callApi("token", {
+      const payload = await callApi("token", {
         method: "POST",
         body: { token: value, accountId: accountId.trim(), proxy: proxy() }
       });
-      setStatus(data);
+      onStatus(payload);
       setToken("");
       setReplacing(false);
       writeProxyPrefs(proxy());
@@ -181,12 +422,12 @@ ${t("hint.unauthorized")}`;
       setBusy(false);
     }
   }
-  async function handleDelete() {
+  async function remove() {
     setBusy(true);
     setNotice(null);
     try {
-      const data = await callApi("token", { method: "DELETE" });
-      setStatus(data);
+      const payload = await callApi("token", { method: "DELETE" });
+      onStatus(payload);
       setNotice({ kind: "ok", text: t("msg.deleted") });
     } catch (error) {
       setNotice({ kind: "error", text: describeError(error) });
@@ -194,12 +435,12 @@ ${t("hint.unauthorized")}`;
       setBusy(false);
     }
   }
-  async function handleProbe() {
+  async function runProbe() {
     setProbing(true);
     setNotice(null);
     try {
-      const data = await callApi("probe", { method: "POST", body: { proxy: proxy() } });
-      setProbeResult(data);
+      const payload = await callApi("probe", { method: "POST", body: { proxy: proxy() } });
+      setProbeResult(payload);
       writeProxyPrefs(proxy());
     } catch (error) {
       setNotice({ kind: "error", text: describeError(error) });
@@ -207,75 +448,112 @@ ${t("hint.unauthorized")}`;
       setProbing(false);
     }
   }
-  const configured = status?.configured === true;
+  const suspicious = suspiciousToken(token);
   const verifiedAt = formatTime(status?.verifiedAt);
-  function renderTokenForm() {
-    const suspicious = suspiciousToken(token);
-    return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-label" }, t("step.token.title")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-desc" }, t("step.token.desc"), " ", /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-desc" }, t("perm.list"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-row" }, /* @__PURE__ */ import_react.default.createElement(
-      "input",
-      {
-        className: "cfd-input",
-        type: "password",
-        autoComplete: "off",
-        spellCheck: false,
-        placeholder: t("step.token.placeholder"),
-        value: token,
-        onChange: (event) => setToken(event.target.value),
-        onKeyDown: (event) => {
-          if (event.key === "Enter") void handleSave();
-        }
+  return /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react3.default.createElement("header", { className: "cfd-topbar" }, /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("h2", { className: "cfd-title" }, t("title")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-sub" }, t("subtitle"))), onClose === void 0 ? null : /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-toolbar" }, /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", onClick: onClose }, t("settings.back")))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-card" }, configured && !replacing ? /* @__PURE__ */ import_react3.default.createElement(import_react3.default.Fragment, null, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-meta" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, status.masked ?? "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.masked"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value" }, typeof status.accounts === "number" ? status.accounts : "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.accounts"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value" }, typeof status.rumSites === "number" ? status.rumSites : "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.sites"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, verifiedAt ?? t("status.neverVerified")), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.verified")))), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint" }, status.source === "environment" ? t("status.source.environment") : t("status.source.stored"), typeof status.accountId === "string" ? ` \xB7 Account ID: ${status.accountId}` : ""), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-actions" }, /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => setReplacing(true) }, t("action.replace")), /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => void remove() }, t("action.delete")))) : null, showTokenForm ? /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-label" }, t("step.token.title")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-desc" }, t("step.token.desc"), " ", /* @__PURE__ */ import_react3.default.createElement("span", { className: "cfd-desc" }, t("perm.list"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-row" }, /* @__PURE__ */ import_react3.default.createElement(
+    "input",
+    {
+      className: "cfd-input",
+      type: "password",
+      autoComplete: "off",
+      spellCheck: false,
+      placeholder: t("step.token.placeholder"),
+      value: token,
+      onChange: (event) => setToken(event.target.value),
+      onKeyDown: (event) => {
+        if (event.key === "Enter") void save();
       }
-    ), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn cfd-btn--primary", disabled: busy, onClick: () => void handleSave() }, busy ? t("step.token.saving") : t("step.token.save"))), suspicious === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint cfd-warn" }, suspicious === "token-id" ? t("warn.tokenId") : suspicious === "global-key" ? t("warn.globalKey") : suspicious === "account-token" ? t("warn.accountToken") : t("warn.tokenLength")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-row", style: { marginTop: "10px" } }, /* @__PURE__ */ import_react.default.createElement(
-      "input",
-      {
-        className: "cfd-input",
-        type: "text",
-        autoComplete: "off",
-        spellCheck: false,
-        placeholder: t("placeholder.accountId"),
-        value: accountId,
-        onChange: (event) => setAccountId(event.target.value)
+    }
+  ), /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn cfd-btn--primary", disabled: busy, onClick: () => void save() }, busy ? t("step.token.saving") : t("step.token.save"))), suspicious === null ? null : /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint cfd-warn" }, suspicious === "token-id" ? t("warn.tokenId") : suspicious === "global-key" ? t("warn.globalKey") : suspicious === "account-token" ? t("warn.accountToken") : t("warn.tokenLength")), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-row", style: { marginTop: "10px" } }, /* @__PURE__ */ import_react3.default.createElement(
+    "input",
+    {
+      className: "cfd-input",
+      type: "text",
+      autoComplete: "off",
+      spellCheck: false,
+      placeholder: t("placeholder.accountId"),
+      value: accountId,
+      onChange: (event) => setAccountId(event.target.value)
+    }
+  )), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react3.default.createElement("span", { className: "cfd-desc" }, t("label.accountId")), " ", t("hint.accountId")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react3.default.createElement("a", { className: "cfd-link", href: "https://dash.cloudflare.com/profile/api-tokens", target: "_blank", rel: "noreferrer" }, t("step.token.console")))) : null, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-label" }, t("step.proxy.title")), /* @__PURE__ */ import_react3.default.createElement("label", { className: "cfd-check" }, /* @__PURE__ */ import_react3.default.createElement(
+    "input",
+    {
+      type: "checkbox",
+      checked: proxyEnabled,
+      onChange: (event) => {
+        const enabled = event.target.checked;
+        setProxyEnabled(enabled);
+        writeProxyPrefs({ enabled, url: proxyUrl });
       }
-    )), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-desc" }, t("label.accountId")), " ", t("hint.accountId")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("a", { className: "cfd-link", href: "https://dash.cloudflare.com/profile/api-tokens", target: "_blank", rel: "noreferrer" }, t("step.token.console"))));
+    }
+  ), t("step.proxy.toggle")), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-row", style: { marginTop: "10px" } }, /* @__PURE__ */ import_react3.default.createElement(
+    "input",
+    {
+      className: "cfd-input",
+      type: "text",
+      spellCheck: false,
+      disabled: !proxyEnabled,
+      placeholder: t("step.proxy.placeholder"),
+      value: proxyUrl,
+      onChange: (event) => setProxyUrl(event.target.value),
+      onBlur: () => writeProxyPrefs({ enabled: proxyEnabled, url: proxyUrl })
+    }
+  ), /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: probing, onClick: () => void runProbe() }, probing ? t("action.probing") : t("action.probe"))), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint" }, t("step.proxy.hint"))), notice === null ? null : /* @__PURE__ */ import_react3.default.createElement("p", { className: notice.kind === "ok" ? "cfd-hint cfd-ok" : "cfd-error" }, notice.text), probeResult === null ? null : /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-probe" }, [
+    ["direct", probeResult.direct, t("probe.direct")],
+    ["proxied", probeResult.proxied, t("probe.proxied")]
+  ].filter(([, value]) => value !== void 0 && value !== null).map(([key, value, label]) => /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-probe-row", key }, /* @__PURE__ */ import_react3.default.createElement("span", { className: "cfd-probe-name" }, label), /* @__PURE__ */ import_react3.default.createElement("span", null, value.ok ? t("probe.ok") : t("probe.fail")), value.ok ? /* @__PURE__ */ import_react3.default.createElement(import_react3.default.Fragment, null, /* @__PURE__ */ import_react3.default.createElement("span", null, "DNS ", formatMs(value.timings?.dnsMs)), /* @__PURE__ */ import_react3.default.createElement("span", null, "TLS ", formatMs(value.timings?.tlsMs)), /* @__PURE__ */ import_react3.default.createElement("span", null, "TTFB ", formatMs(value.timings?.ttfbMs)), /* @__PURE__ */ import_react3.default.createElement("span", null, "Total ", formatMs(value.timings?.totalMs))) : /* @__PURE__ */ import_react3.default.createElement("span", null, `${value.error?.code ?? "network"} \xB7 ${value.error?.message ?? ""}`))))));
+}
+
+// src/client/app.jsx
+function Panel({ t }) {
+  const [phase, setPhase] = (0, import_react4.useState)("loading");
+  const [status, setStatus] = (0, import_react4.useState)(null);
+  const [showSettings, setShowSettings] = (0, import_react4.useState)(false);
+  const [proxy, setProxy] = (0, import_react4.useState)(() => readProxyPrefs());
+  (0, import_react4.useEffect)(() => {
+    let cancelled = false;
+    callApi("status").then((payload) => {
+      if (cancelled) return;
+      setStatus(payload);
+      setPhase("ready");
+      if (payload.configured !== true) setShowSettings(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setStatus({ configured: false });
+      setPhase("ready");
+      setShowSettings(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (phase === "loading") {
+    return /* @__PURE__ */ import_react4.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react4.default.createElement("p", { className: "cfd-hint" }, t("loading")));
   }
-  function renderProxy() {
-    return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-label" }, t("step.proxy.title")), /* @__PURE__ */ import_react.default.createElement("label", { className: "cfd-check" }, /* @__PURE__ */ import_react.default.createElement(
-      "input",
+  const configured = status?.configured === true;
+  if (!configured || showSettings) {
+    return /* @__PURE__ */ import_react4.default.createElement(
+      SettingsView,
       {
-        type: "checkbox",
-        checked: proxyEnabled,
-        onChange: (event) => {
-          const enabled = event.target.checked;
-          setProxyEnabled(enabled);
-          writeProxyPrefs({ enabled, url: proxyUrl });
-        }
+        t,
+        status,
+        onStatus: (next) => {
+          setStatus(next);
+          if (next.configured !== true) setShowSettings(true);
+        },
+        ...configured ? {
+          onClose: () => {
+            setProxy(readProxyPrefs());
+            setShowSettings(false);
+          }
+        } : {}
       }
-    ), t("step.proxy.toggle")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-row", style: { marginTop: "10px" } }, /* @__PURE__ */ import_react.default.createElement(
-      "input",
-      {
-        className: "cfd-input",
-        type: "text",
-        spellCheck: false,
-        disabled: !proxyEnabled,
-        placeholder: t("step.proxy.placeholder"),
-        value: proxyUrl,
-        onChange: (event) => setProxyUrl(event.target.value),
-        onBlur: () => writeProxyPrefs({ enabled: proxyEnabled, url: proxyUrl })
-      }
-    ), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: probing, onClick: () => void handleProbe() }, probing ? t("action.probing") : t("action.probe"))), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("step.proxy.hint")));
+    );
   }
-  function renderProbe() {
-    if (probeResult === null) return null;
-    const rows = [
-      ["direct", probeResult.direct, t("probe.direct")],
-      ["proxied", probeResult.proxied, t("probe.proxied")]
-    ].filter(([, value]) => value !== void 0 && value !== null);
-    return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-probe" }, rows.map(([key, value, label]) => /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-probe-row", key }, /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-probe-name" }, label), /* @__PURE__ */ import_react.default.createElement("span", null, value.ok ? t("probe.ok") : t("probe.fail")), value.ok ? /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("span", null, "DNS ", formatMs(value.timings?.dnsMs)), /* @__PURE__ */ import_react.default.createElement("span", null, "TLS ", formatMs(value.timings?.tlsMs)), /* @__PURE__ */ import_react.default.createElement("span", null, "TTFB ", formatMs(value.timings?.ttfbMs)), /* @__PURE__ */ import_react.default.createElement("span", null, "Total ", formatMs(value.timings?.totalMs))) : /* @__PURE__ */ import_react.default.createElement("span", null, (value.error?.code ?? "network") + " \xB7 " + (value.error?.message ?? "")))));
-  }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react.default.createElement("header", { className: "cfd-head" }, /* @__PURE__ */ import_react.default.createElement("h2", { className: "cfd-title" }, t("title")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-sub" }, t("subtitle"))), phase === "loading" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("loading")) : /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-card" }, configured ? /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-meta" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, status.masked ?? "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.masked"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value" }, typeof status.accounts === "number" ? status.accounts : "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.accounts"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value" }, typeof status.rumSites === "number" ? status.rumSites : "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.sites"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, verifiedAt ?? t("status.neverVerified")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.verified")))), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, status.source === "environment" ? t("status.source.environment") : t("status.source.stored"), status.source === "environment" ? ` \xB7 ${t("hint.envFallback")}` : "", typeof status.accountId === "string" ? ` \xB7 Account ID: ${status.accountId}` : ""), status.rumSites === 0 ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("status.noSites")) : null, typeof status.hint === "string" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, status.hint) : null, replacing ? renderTokenForm() : null, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-actions" }, /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => setReplacing(!replacing) }, t("action.replace")), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => void handleDelete() }, t("action.delete")))) : renderTokenForm(), renderProxy(), notice === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: notice.kind === "ok" ? "cfd-hint cfd-ok" : "cfd-error" }, notice.text), renderProbe()));
+  return /* @__PURE__ */ import_react4.default.createElement(Overview, { t, proxy, onOpenSettings: () => setShowSettings(true) });
 }
 function PanelIcon({ size = 20, active = false }) {
-  return /* @__PURE__ */ import_react.default.createElement(
+  return /* @__PURE__ */ import_react4.default.createElement(
     "svg",
     {
       className: "cfd-icon",
@@ -286,9 +564,9 @@ function PanelIcon({ size = 20, active = false }) {
       "aria-hidden": "true",
       style: { opacity: active ? 1 : 0.78 }
     },
-    /* @__PURE__ */ import_react.default.createElement("rect", { x: "3.5", y: "13", width: "3.4", height: "7.5", rx: "1.7", fill: "currentColor", opacity: "0.75" }),
-    /* @__PURE__ */ import_react.default.createElement("rect", { x: "10.3", y: "8.5", width: "3.4", height: "12", rx: "1.7", fill: "currentColor", opacity: "0.88" }),
-    /* @__PURE__ */ import_react.default.createElement("rect", { x: "17.1", y: "3.8", width: "3.4", height: "16.7", rx: "1.7", fill: "currentColor" })
+    /* @__PURE__ */ import_react4.default.createElement("rect", { x: "3.5", y: "13", width: "3.4", height: "7.5", rx: "1.7", fill: "currentColor", opacity: "0.75" }),
+    /* @__PURE__ */ import_react4.default.createElement("rect", { x: "10.3", y: "8.5", width: "3.4", height: "12", rx: "1.7", fill: "currentColor", opacity: "0.88" }),
+    /* @__PURE__ */ import_react4.default.createElement("rect", { x: "17.1", y: "3.8", width: "3.4", height: "16.7", rx: "1.7", fill: "currentColor" })
   );
 }
 
@@ -341,7 +619,47 @@ var zh = {
   "warn.globalKey": "\u8FD9\u770B\u8D77\u6765\u662F Global API Key\uFF0C\u672C\u63D2\u4EF6\u53EA\u652F\u6301 API Token",
   "warn.accountToken": "\u8FD9\u662F\u300C\u5E10\u6237 API \u4EE4\u724C\u300D\uFF0C\u5FC5\u987B\u586B\u5199 Account ID \u624D\u80FD\u6821\u9A8C",
   "warn.tokenLength": "\u7528\u6237 API Token \u901A\u5E38\u662F 40 \u4F4D\u5B57\u7B26\uFF0C\u5F53\u524D\u957F\u5EA6\u4E0D\u5BF9\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574",
-  "hint.unauthorized": "\u8BF7\u786E\u8BA4\uFF1A\u2460 \u590D\u5236\u7684\u662F\u521B\u5EFA\u5B8C\u6210\u65F6\u663E\u793A\u7684 Token \u503C\uFF0C\u4E0D\u662F Token ID\uFF1B\u2461 \u521B\u5EFA\u6D41\u7A0B\u5DF2\u8D70\u5B8C Continue to summary \u2192 Create Token\uFF1B\u2462 \u6CA1\u6709\u4F7F\u7528 Global API Key\u3002"
+  "hint.unauthorized": "\u8BF7\u786E\u8BA4\uFF1A\u2460 \u590D\u5236\u7684\u662F\u521B\u5EFA\u5B8C\u6210\u65F6\u663E\u793A\u7684 Token \u503C\uFF0C\u4E0D\u662F Token ID\uFF1B\u2461 \u521B\u5EFA\u6D41\u7A0B\u5DF2\u8D70\u5B8C Continue to summary \u2192 Create Token\uFF1B\u2462 \u6CA1\u6709\u4F7F\u7528 Global API Key\u3002",
+  "overview.title": "Web Analytics",
+  "overview.loading": "\u52A0\u8F7D\u4E2D\u2026",
+  "overview.refresh": "\u5237\u65B0",
+  "overview.refreshing": "\u5237\u65B0\u4E2D\u2026",
+  "overview.settings": "\u8BBE\u7F6E",
+  "overview.noSites": "\u6CA1\u6709\u53EF\u7528\u7684 Web Analytics \u7AD9\u70B9",
+  "overview.noSitesHint": "\u8BF7\u786E\u8BA4\u8D26\u53F7\u5DF2\u5728 Cloudflare \u542F\u7528 Web Analytics\uFF0C\u5E76\u8BA9 Token \u5177\u5907 Account Settings:Read \u6743\u9650\u3002",
+  "overview.loadFailed": "\u65E0\u6CD5\u8BFB\u53D6\u7AD9\u70B9\u5217\u8868",
+  "overview.footer": "\u6570\u636E\u6765\u81EA Cloudflare Web Analytics\uFF08RUM\uFF09\xB7 \u4E0D\u542B\u5E26\u5BBD/\u6D41\u91CF\u5B57\u8282 \xB7 \u5DF2\u6392\u9664 bot \u6D41\u91CF",
+  "range.24h": "\u8FD1 24 \u5C0F\u65F6",
+  "range.7d": "\u8FD1 7 \u5929",
+  "range.30d": "\u8FD1 30 \u5929",
+  "kpi.visits": "\u8BBF\u95EE\u6570",
+  "kpi.pageLoads": "\u9875\u9762\u52A0\u8F7D",
+  "kpi.countries": "\u56FD\u5BB6/\u5730\u533A",
+  "kpi.referrers": "\u5916\u90E8\u6765\u6E90",
+  "kpi.referrersHint": "\u4E0D\u542B\u76F4\u63A5\u8BBF\u95EE",
+  "kpi.noData": "\u6682\u65E0\u6570\u636E",
+  "kpi.previous": "\u5BF9\u6BD4\u4E0A\u4E00\u5468\u671F",
+  "chart.title": "\u8BBF\u95EE\u8D8B\u52BF",
+  "chart.sub": "\u6309\u672C\u5730\u65F6\u533A\u5C55\u793A",
+  "chart.visits": "\u8BBF\u95EE\u6570",
+  "chart.pageLoads": "\u9875\u9762\u52A0\u8F7D",
+  "chart.empty": "\u6240\u9009\u65F6\u95F4\u6BB5\u6CA1\u6709\u6570\u636E",
+  "list.paths": "\u70ED\u95E8\u9875\u9762",
+  "list.referrers": "\u6765\u6E90",
+  "list.countries": "\u56FD\u5BB6/\u5730\u533A",
+  "list.browsers": "\u6D4F\u89C8\u5668",
+  "list.direct": "\u76F4\u63A5\u8BBF\u95EE",
+  "list.visits": "\u6B21\u8BBF\u95EE",
+  "list.count": "\u6309\u9875\u9762\u52A0\u8F7D\u6392\u5E8F",
+  "list.empty": "\u6682\u65E0\u6570\u636E",
+  "vitals.title": "Core Web Vitals",
+  "vitals.sub": "P75 \u5206\u4F4D\u6570",
+  "vitals.empty": "\u6682\u65E0\u6027\u80FD\u91C7\u6837\u6570\u636E",
+  "vitals.note": "\u6570\u503C\u4E3A P75 \u5206\u4F4D\u6570\uFF1B\u7EFF/\u9EC4/\u7EA2\u5206\u522B\u8868\u793A\u826F\u597D/\u9700\u6539\u8FDB/\u8F83\u5DEE\u7684\u6837\u672C\u5360\u6BD4\u3002",
+  "vitals.good": "\u826F\u597D",
+  "vitals.samples": "\u4E2A\u6837\u672C",
+  "vitals.noSamples": "\u65E0\u6837\u672C",
+  "settings.back": "\u8FD4\u56DE\u770B\u677F"
 };
 var en = {
   "panel.label": "Cloudflare dashboard",
@@ -390,11 +708,51 @@ var en = {
   "warn.globalKey": "This looks like the Global API Key; only API tokens are supported",
   "warn.accountToken": "This is an account API token; fill in its Account ID to verify it",
   "warn.tokenLength": "A user API token is normally 40 characters; check that the whole value was copied",
-  "hint.unauthorized": "Check that you copied the token value shown after creation (not the token ID), that the create flow finished with Continue to summary \u2192 Create Token, and that you did not paste the Global API Key."
+  "hint.unauthorized": "Check that you copied the token value shown after creation (not the token ID), that the create flow finished with Continue to summary \u2192 Create Token, and that you did not paste the Global API Key.",
+  "overview.title": "Web Analytics",
+  "overview.loading": "Loading\u2026",
+  "overview.refresh": "Refresh",
+  "overview.refreshing": "Refreshing\u2026",
+  "overview.settings": "Settings",
+  "overview.noSites": "No Web Analytics site is available",
+  "overview.noSitesHint": "Confirm that Web Analytics is enabled for the account and that the token has Account Settings:Read.",
+  "overview.loadFailed": "Could not read the site list",
+  "overview.footer": "Data from Cloudflare Web Analytics (RUM) \xB7 bandwidth bytes are not included \xB7 bot traffic excluded",
+  "range.24h": "Last 24 hours",
+  "range.7d": "Last 7 days",
+  "range.30d": "Last 30 days",
+  "kpi.visits": "Visits",
+  "kpi.pageLoads": "Page loads",
+  "kpi.countries": "Countries",
+  "kpi.referrers": "External referrers",
+  "kpi.referrersHint": "Direct traffic excluded",
+  "kpi.noData": "No data",
+  "kpi.previous": "vs previous period",
+  "chart.title": "Traffic trend",
+  "chart.sub": "Shown in your local time zone",
+  "chart.visits": "Visits",
+  "chart.pageLoads": "Page loads",
+  "chart.empty": "No data in the selected range",
+  "list.paths": "Top pages",
+  "list.referrers": "Referrers",
+  "list.countries": "Countries",
+  "list.browsers": "Browsers",
+  "list.direct": "Direct",
+  "list.visits": "visits",
+  "list.count": "By page loads",
+  "list.empty": "No data",
+  "vitals.title": "Core Web Vitals",
+  "vitals.sub": "P75 quantiles",
+  "vitals.empty": "No performance samples yet",
+  "vitals.note": "Values are P75 quantiles; green/yellow/red are the good/needs-improvement/poor sample shares.",
+  "vitals.good": "good",
+  "vitals.samples": "samples",
+  "vitals.noSamples": "No samples",
+  "settings.back": "Back to dashboard"
 };
 
 // src/client/styles.css
-var styles_default = ".cfd-page {\n  box-sizing: border-box;\n  max-width: 760px;\n  padding: 28px 28px 40px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-head {\n  margin-bottom: 20px;\n}\n\n.cfd-title {\n  margin: 0;\n  font-size: 18px;\n  font-weight: 600;\n  line-height: 1.4;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-sub {\n  margin: 8px 0 0;\n  font-size: 13px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-card {\n  margin-top: 16px;\n  padding: 20px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 12px;\n  background: var(--dsw-alias-bg-layer-1);\n}\n\n.cfd-step + .cfd-step {\n  margin-top: 22px;\n  padding-top: 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n.cfd-label {\n  margin-bottom: 8px;\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-desc {\n  margin: 0 0 10px;\n  font-size: 12px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.cfd-input {\n  box-sizing: border-box;\n  flex: 1 1 260px;\n  min-width: 0;\n  height: 34px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  outline: none;\n}\n\n.cfd-input:focus {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn {\n  height: 32px;\n  padding: 0 14px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  cursor: pointer;\n}\n\n.cfd-btn:hover:not(:disabled) {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn--primary {\n  border-color: var(--dsw-alias-brand-primary);\n  background: var(--dsw-alias-brand-primary);\n  /* Theme-aware contrast: the label uses the base background, which is the\n     inverse of the brand fill in both light and dark themes. A literal #fff\n     disappears whenever the dark theme's brand accent is near-white. */\n  color: var(--dsw-alias-bg-base);\n}\n\n.cfd-btn:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n\n.cfd-check {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  font-size: 13px;\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n}\n\n.cfd-check input {\n  accent-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-hint {\n  margin: 8px 0 0;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-warn {\n  color: var(--dsw-alias-state-warn-primary);\n}\n\n.cfd-link {\n  font-size: 13px;\n  color: var(--dsw-alias-brand-primary);\n  text-decoration: none;\n}\n\n.cfd-link:hover {\n  text-decoration: underline;\n}\n\n.cfd-ok {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.cfd-error {\n  margin: 10px 0 0;\n  font-size: 13px;\n  line-height: 1.6;\n  color: var(--dsw-alias-state-error-primary);\n  white-space: pre-wrap;\n}\n\n.cfd-meta {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));\n  gap: 10px;\n  margin-top: 4px;\n}\n\n.cfd-metric {\n  padding: 12px;\n  border-radius: 10px;\n  background: var(--dsw-alias-bg-layer-2);\n}\n\n.cfd-metric-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 1.3;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-all;\n}\n\n.cfd-metric-value--small {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n.cfd-metric-label {\n  margin-top: 4px;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-actions {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n  margin-top: 16px;\n}\n\n.cfd-probe {\n  display: grid;\n  gap: 6px;\n  margin-top: 12px;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-probe-row {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.cfd-probe-name {\n  min-width: 56px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-icon {\n  display: block;\n}\n";
+var styles_default = ".cfd-page {\n  box-sizing: border-box;\n  max-width: 760px;\n  padding: 28px 28px 40px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-head {\n  margin-bottom: 20px;\n}\n\n.cfd-title {\n  margin: 0;\n  font-size: 18px;\n  font-weight: 600;\n  line-height: 1.4;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-sub {\n  margin: 8px 0 0;\n  font-size: 13px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-card {\n  margin-top: 16px;\n  padding: 20px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 12px;\n  background: var(--dsw-alias-bg-layer-1);\n}\n\n.cfd-step + .cfd-step {\n  margin-top: 22px;\n  padding-top: 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n.cfd-label {\n  margin-bottom: 8px;\n  font-size: 13px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-desc {\n  margin: 0 0 10px;\n  font-size: 12px;\n  line-height: 1.7;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.cfd-input {\n  box-sizing: border-box;\n  flex: 1 1 260px;\n  min-width: 0;\n  height: 34px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  outline: none;\n}\n\n.cfd-input:focus {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn {\n  height: 32px;\n  padding: 0 14px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  cursor: pointer;\n}\n\n.cfd-btn:hover:not(:disabled) {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-btn--primary {\n  border-color: var(--dsw-alias-brand-primary);\n  background: var(--dsw-alias-brand-primary);\n  /* Theme-aware contrast: the label uses the base background, which is the\n     inverse of the brand fill in both light and dark themes. A literal #fff\n     disappears whenever the dark theme's brand accent is near-white. */\n  color: var(--dsw-alias-bg-base);\n}\n\n.cfd-btn:disabled {\n  opacity: 0.55;\n  cursor: default;\n}\n\n.cfd-check {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  font-size: 13px;\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n}\n\n.cfd-check input {\n  accent-color: var(--dsw-alias-brand-primary);\n}\n\n.cfd-hint {\n  margin: 8px 0 0;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-warn {\n  color: var(--dsw-alias-state-warn-primary);\n}\n\n.cfd-link {\n  font-size: 13px;\n  color: var(--dsw-alias-brand-primary);\n  text-decoration: none;\n}\n\n.cfd-link:hover {\n  text-decoration: underline;\n}\n\n.cfd-ok {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.cfd-error {\n  margin: 10px 0 0;\n  font-size: 13px;\n  line-height: 1.6;\n  color: var(--dsw-alias-state-error-primary);\n  white-space: pre-wrap;\n}\n\n.cfd-meta {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));\n  gap: 10px;\n  margin-top: 4px;\n}\n\n.cfd-metric {\n  padding: 12px;\n  border-radius: 10px;\n  background: var(--dsw-alias-bg-layer-2);\n}\n\n.cfd-metric-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 1.3;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-all;\n}\n\n.cfd-metric-value--small {\n  font-size: 13px;\n  font-weight: 500;\n}\n\n.cfd-metric-label {\n  margin-top: 4px;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-actions {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n  margin-top: 16px;\n}\n\n.cfd-probe {\n  display: grid;\n  gap: 6px;\n  margin-top: 12px;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-probe-row {\n  display: flex;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.cfd-probe-name {\n  min-width: 56px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-icon {\n  display: block;\n}\n\n/* ------------------------------------------------------------------ */\n/* Dashboard                                                          */\n/* ------------------------------------------------------------------ */\n\n.cfd-page--wide {\n  max-width: 1180px;\n  padding: 24px 28px 40px;\n}\n\n.cfd-topbar {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 16px;\n  flex-wrap: wrap;\n  margin-bottom: 18px;\n}\n\n.cfd-toolbar {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.cfd-select {\n  height: 32px;\n  padding: 0 8px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n}\n\n.cfd-kpi-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));\n  gap: 12px;\n  margin-bottom: 14px;\n}\n\n.cfd-kpi {\n  padding: 16px 18px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 12px;\n  background: var(--dsw-alias-bg-layer-1);\n}\n\n.cfd-kpi-label {\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-kpi-value {\n  margin-top: 6px;\n  font-size: 28px;\n  font-weight: 600;\n  line-height: 1.2;\n  letter-spacing: -0.01em;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-kpi-delta {\n  display: flex;\n  gap: 6px;\n  align-items: center;\n  margin-top: 8px;\n  font-size: 12px;\n}\n\n.cfd-kpi-delta--up {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.cfd-kpi-delta--down {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.cfd-kpi-delta--flat {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-kpi-delta-note,\n.cfd-kpi-hint {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-kpi-hint {\n  margin-top: 8px;\n  font-size: 12px;\n}\n\n.cfd-card-head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  gap: 12px;\n  margin-bottom: 12px;\n}\n\n.cfd-card-title {\n  margin: 0;\n  font-size: 14px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-card-sub {\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-grid-2 {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));\n  gap: 12px;\n  margin: 12px 0;\n}\n\n.cfd-grid-2 .cfd-card {\n  margin-top: 0;\n}\n\n.cfd-list {\n  display: grid;\n  gap: 12px;\n  margin: 0;\n  padding: 0;\n  list-style: none;\n}\n\n.cfd-list-head {\n  display: flex;\n  justify-content: space-between;\n  gap: 12px;\n  font-size: 13px;\n}\n\n.cfd-list-name {\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n\n.cfd-list-value {\n  color: var(--dsw-alias-label-secondary);\n  font-variant-numeric: tabular-nums;\n}\n\n.cfd-bar {\n  height: 6px;\n  margin-top: 6px;\n  border-radius: 3px;\n  background: var(--dsw-alias-bg-layer-2);\n  overflow: hidden;\n}\n\n.cfd-bar-fill {\n  height: 100%;\n  border-radius: 3px;\n  background: var(--dsw-alias-brand-primary);\n  opacity: 0.75;\n}\n\n.cfd-list-sub {\n  margin-top: 4px;\n  font-size: 11px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-vitals {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));\n  gap: 12px;\n}\n\n.cfd-vital {\n  padding: 12px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 10px;\n}\n\n.cfd-vital-head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n}\n\n.cfd-vital-name {\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-vital-value {\n  font-size: 18px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.cfd-vital-bar {\n  display: flex;\n  height: 6px;\n  margin: 10px 0 6px;\n  border-radius: 3px;\n  background: var(--dsw-alias-bg-layer-2);\n  overflow: hidden;\n}\n\n.cfd-vital-good {\n  background: var(--dsw-alias-state-success-primary);\n}\n\n.cfd-vital-needs {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.cfd-vital-poor {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.cfd-vital-foot {\n  font-size: 11px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-chart {\n  position: relative;\n}\n\n.cfd-chart-plot {\n  position: relative;\n}\n\n.cfd-chart-svg {\n  display: block;\n  width: 100%;\n  height: auto;\n}\n\n.cfd-grid-line {\n  stroke: var(--dsw-alias-border-l1);\n  stroke-width: 1;\n}\n\n.cfd-axis-label {\n  fill: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n}\n\n.cfd-line {\n  fill: none;\n  stroke-width: 2;\n  stroke-linejoin: round;\n  stroke-linecap: round;\n}\n\n.cfd-line--area {\n  stroke: var(--dsw-alias-brand-primary);\n}\n\n.cfd-line--loads {\n  stroke: var(--dsw-alias-state-warn-primary);\n  stroke-dasharray: 4 3;\n}\n\n.cfd-dot--visits {\n  fill: var(--dsw-alias-brand-primary);\n}\n\n.cfd-dot--loads {\n  fill: var(--dsw-alias-state-warn-primary);\n}\n\n.cfd-hover-line {\n  stroke: var(--dsw-alias-border-l2);\n  stroke-dasharray: 3 3;\n}\n\n.cfd-legend {\n  display: flex;\n  gap: 16px;\n  padding: 0 8px 8px;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-legend-item {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.cfd-swatch {\n  display: inline-block;\n  width: 10px;\n  height: 10px;\n  border-radius: 3px;\n}\n\n.cfd-swatch--area {\n  background: var(--dsw-alias-brand-primary);\n  opacity: 0.6;\n}\n\n.cfd-swatch--line {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.cfd-tooltip {\n  position: absolute;\n  top: 8px;\n  transform: translateX(-50%);\n  z-index: 2;\n  padding: 8px 10px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-overlay);\n  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);\n  font-size: 12px;\n  white-space: nowrap;\n  pointer-events: none;\n}\n\n.cfd-tooltip-title {\n  margin-bottom: 4px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-tooltip-row {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.cfd-tooltip-row b {\n  margin-left: auto;\n  padding-left: 12px;\n}\n\n.cfd-chart-empty {\n  padding: 48px 0;\n  text-align: center;\n  font-size: 13px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.cfd-empty-card {\n  margin-top: 40px;\n  padding: 32px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 12px;\n  background: var(--dsw-alias-bg-layer-1);\n  text-align: center;\n}\n\n.cfd-empty-title {\n  margin: 0 0 8px;\n  font-size: 15px;\n  font-weight: 600;\n}\n\n.cfd-foot {\n  margin-top: 16px;\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--dsw-alias-label-secondary);\n}\n";
 
 // src/client/index.jsx
 var inject = ["slots", "locale"];
@@ -407,7 +765,7 @@ function apply(ctx) {
     return () => style.remove();
   }, "cloudflare-dash: styles");
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "cloudflare-dash: dictionaries");
-  const CloudflarePanel = () => import_react2.default.createElement(Panel, { t: ctx.locale.bind(NS) });
+  const CloudflarePanel = () => import_react5.default.createElement(Panel, { t: ctx.locale.bind(NS) });
   ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
     name: "sidebar.panellist",
     id: "cloudflare",

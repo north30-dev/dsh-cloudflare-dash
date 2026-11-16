@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Cloudflare 看板",
-    "description": "在侧边栏增加 Cloudflare 面板。可在界面内配置只读 API Token 并校验权限；Web Analytics 数据视图尚未实现。",
+    "description": "在侧边栏增加 Cloudflare Web Analytics 看板：界面内配置只读 API Token，查看访问数、页面加载、热门页面、来源、国家、浏览器与 Core Web Vitals。",
     "detail": "docs/DETAIL.md"
   }
 }

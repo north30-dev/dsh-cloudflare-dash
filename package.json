@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-cloudflare-dash",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Cloudflare dashboard plugin for DeepSeek Harness, built on the official Cloudflare API.",

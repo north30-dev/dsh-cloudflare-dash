@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Cloudflare dashboard",
-    "description": "Adds a sidebar Cloudflare panel. Configure a read-only API token in the UI and verify access; Web Analytics views are not implemented yet.",
+    "description": "Adds a Cloudflare Web Analytics dashboard to the sidebar: configure a read-only API token in the UI and review visits, page loads, top pages, referrers, countries, browsers, and Core Web Vitals.",
     "detail": "docs/DETAIL.md"
   }
 }

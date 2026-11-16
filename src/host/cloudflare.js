@@ -180,6 +180,55 @@ async function tryAccountOwnedToken(options, accountId) {
 }
 
 /**
+ * Run one GraphQL analytics query.
+ *
+ * Only Host-built queries reach this function: the browser never supplies a
+ * document, so a compromised page cannot turn the Token into an arbitrary API
+ * client. GraphQL reports query errors with HTTP 200, so they are raised from the
+ * body rather than the status.
+ * @param {string} query
+ * @param {{ token: string, proxy?: { host: string, port: number }, variables?: Record<string, unknown>, timeoutMs?: number }} options
+ * @returns {Promise<any>} the `data` member.
+ */
+export async function graphql(query, options) {
+  let response
+  try {
+    response = await request({
+      url: 'https://api.cloudflare.com/client/v4/graphql',
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${options.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ query, ...(options.variables === undefined ? {} : { variables: options.variables }) }),
+      ...(options.proxy === undefined ? {} : { proxy: options.proxy }),
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    })
+  } catch (error) {
+    const mapped = error instanceof HttpError ? error : new HttpError('network', String(error))
+    throw new CloudflareError(mapped.code, mapped.message)
+  }
+  if (response.status === 401) {
+    throw new CloudflareError('unauthorized', 'Token 无效或已失效', { status: 401 })
+  }
+  if (response.status === 403) {
+    throw new CloudflareError('forbidden', 'Token 缺少 Account Analytics:Read 权限', { status: 403 })
+  }
+  let payload
+  try {
+    payload = JSON.parse(response.text)
+  } catch {
+    throw new CloudflareError('bad-response', `Cloudflare 返回了非 JSON 响应（HTTP ${response.status}）`, { status: response.status })
+  }
+  const errors = Array.isArray(payload?.errors) ? payload.errors : []
+  if (errors.length > 0) {
+    const message = errors.map((entry) => entry?.message).filter((entry) => typeof entry === 'string').join('; ')
+    throw new CloudflareError('graphql', message === '' ? 'GraphQL 查询失败' : message, { status: response.status })
+  }
+  return payload?.data
+}
+
+/**
  * Verify a Token and report what it can reach.
  *
  * Three shapes are supported:

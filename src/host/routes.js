@@ -8,6 +8,7 @@
  */
 import { CloudflareError, describeAccess } from './cloudflare.js'
 import { HttpError, probe, proxyFromSettings } from './http.js'
+import { RANGES, fetchOverview, listSites } from './analytics.js'
 import { readState, writeState } from './state.js'
 import { createTokenStore, normalizeAccountId, normalizeToken } from './store.js'
 
@@ -105,7 +106,8 @@ async function readJsonBody(request) {
  */
 function sendFailure(response, error) {
   if (error instanceof CloudflareError) {
-    const status = error.status === 401 || error.status === 403 || error.status === 429 ? error.status : 502
+    const passthrough = [400, 401, 403, 404, 429]
+    const status = passthrough.includes(error.status) ? error.status : 502
     sendJson(response, status, {
       error: error.message,
       code: error.code,
@@ -146,6 +148,32 @@ export function registerRoutes(ctx) {
       ...(verifiedAt === undefined ? {} : { verifiedAt }),
       ...(lastAccess === undefined ? {} : lastAccess),
     }
+  }
+
+  /**
+   * Proxy preference carried by a GET request.
+   * @param {import('node:http').IncomingMessage} request
+   * @returns {{ host: string, port: number } | undefined}
+   */
+  function proxyOfRequest(request) {
+    const url = new URL(request.url ?? '/', 'http://localhost')
+    return proxyFromSettings({
+      enabled: url.searchParams.get('proxy') === '1',
+      url: url.searchParams.get('proxyUrl') ?? undefined,
+    })
+  }
+
+  /**
+   * Resolve what a data request needs, or explain what is missing.
+   * @param {import('node:http').IncomingMessage} request
+   * @returns {Promise<{ token: string, accountId: string, proxy?: { host: string, port: number } }>}
+   */
+  async function dataContext(request) {
+    const token = await store.resolve()
+    if (token === undefined) throw new CloudflareError('no-token', '尚未配置 Token', { status: 401 })
+    const accountId = readState().accountId
+    if (accountId === undefined) throw new CloudflareError('no-account', '缺少 Account ID，请重新保存 Token', { status: 400 })
+    return { token, accountId, proxy: proxyOfRequest(request) }
   }
 
   const disposers = [
@@ -195,6 +223,48 @@ export function registerRoutes(ctx) {
           verifiedAt = Date.now()
           lastAccess = access
           sendJson(response, 200, await describedState())
+        } catch (error) {
+          sendFailure(response, error)
+        }
+      },
+    }),
+
+    ctx.webServer.register({
+      kind: 'exact',
+      path: `${PREFIX}/sites`,
+      handler: async (request, response) => {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { allow: 'GET' })
+          response.end()
+          return
+        }
+        if (refuse(ctx, request, response)) return
+        try {
+          const context = await dataContext(request)
+          sendJson(response, 200, { sites: await listSites(context) })
+        } catch (error) {
+          sendFailure(response, error)
+        }
+      },
+    }),
+
+    ctx.webServer.register({
+      kind: 'exact',
+      path: `${PREFIX}/overview`,
+      handler: async (request, response) => {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { allow: 'GET' })
+          response.end()
+          return
+        }
+        if (refuse(ctx, request, response)) return
+        try {
+          const url = new URL(request.url ?? '/', 'http://localhost')
+          const range = url.searchParams.get('range') ?? '7d'
+          if (RANGES[range] === undefined) throw new HttpError('bad-request', '不支持的时间范围')
+          const siteTag = url.searchParams.get('siteTag') ?? ''
+          const context = await dataContext(request)
+          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range }))
         } catch (error) {
           sendFailure(response, error)
         }
