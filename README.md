@@ -2,7 +2,7 @@
 
 DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通过 Cloudflare 官方 API 展示 Web Analytics 数据。
 
-> 当前状态：**M1 — 配置闭环**。已完成 UI 内配置 Token、校验、代理开关与网络诊断；**站点指标视图尚未实现**，面板暂不展示真实流量数据。
+> 当前状态：**M4 — Agent 工具**。看板（概览、趋势、维度、Core Web Vitals、加载性能、缓存与自动刷新）已完成；另提供一个按需调用的 agent 工具 `cloudflare_analytics`，未配置 Token 时不会出现在任何 agent 的工具列表里。
 
 ## 快速开始
 
@@ -39,26 +39,44 @@ Token 保存在 DSH 凭据库（`~/.credentials.yaml` 的记录 `dsh-cloudflare-
 
 ## 权限与隐私
 
-- 插件代码只实现**只读**的 Cloudflare 请求：`/user/tokens/verify`、`/accounts`、`/accounts/{id}/rum/site_info/list`。
+- 插件代码只实现**只读**的 Cloudflare 请求：`/user/tokens/verify`、`/accounts/{id}/tokens/verify`、`/accounts`、`/accounts/{id}/rum/site_info/list`、GraphQL `viewer` 查询。
 - 无遥测、无第三方上报；请求只发往 `api.cloudflare.com`。
 - Token 只在 Host 侧使用；浏览器只拿到「已配置 + 掩码」。
 - 也可以改用它支持的备用来源：启动环境变量 `CLOUDFLARE_API_TOKEN`（优先级低于 UI 保存的记录）。
 
 ## 代理
 
-面板里可开启 HTTP 代理（`http://host:port`，CONNECT 隧道），用于直连 Cloudflare API 不稳定的网络。设置存在浏览器 localStorage，属于非机密偏好；代理地址会随每次请求传给 Host。
+面板里可开启 HTTP 代理（`http://host:port`，CONNECT 隧道），用于直连 Cloudflare API 不稳定的网络。设置存在浏览器 localStorage，属于非机密偏好；代理地址会随每次请求传给 Host，同时写入 `state.json`，这样 agent 工具与看板走同一条网络路径。
 
 「网络诊断」会分别测一次直连与代理的 DNS / TLS / TTFB / 总耗时，方便判断要不要开代理。
+
+## Agent 工具
+
+插件注册**一个**工具 `cloudflare_analytics`（不是每个视图一个，避免每步都塞满工具定义）：
+
+| `action` | 作用 |
+|---|---|
+| `overview` | 流量总量与环比、逐桶访问、六类 Top 榜、Core Web Vitals、加载阶段耗时；可传 `site`（站点 tag 或域名）、`range`（24h/7d/30d）、`fresh`（跳过缓存） |
+| `sites` | 列出账户下的 Web Analytics 站点与 siteTag |
+| `status` | 只报告 Token/Account ID/代理是否就绪，不访问 Cloudflare |
+
+- **不注入上下文**：工具返回的是一段紧凑文本报告，只有真被调用时才产生数据；不调用就什么都不占。
+- **未配置时不可见**：没有 Token 的 profile 里，这个工具不会出现在任何 agent 的工具列表（Host 用 `tools.register` 的 `when` 条件做门控，30 秒内自适应变化）。
+- **只读**：与看板走同一套 GET / GraphQL query，没有任何写操作。
+- 详细报告与图表仍在侧边栏面板里；工具报告末尾会提示这一点。
 
 ## 目录结构
 
 ```
 index.js                 # Host 入口（re-export src/host）
-src/host/index.js        # 插件 apply：注册 HTTP 路由
+src/host/index.js        # 插件 apply：注册 HTTP 路由与 agent 工具
 src/host/routes.js       # /cloudflare-dash/api/v1/* 路由与请求栅栏
 src/host/cloudflare.js   # Cloudflare API 客户端（只读）
+src/host/analytics.js    # RUM GraphQL 查询与数据整形（含 TTL 缓存）
+src/host/tool.js         # agent 工具 cloudflare_analytics
 src/host/http.js         # 直连/代理出网与阶段计时（零第三方依赖）
 src/host/store.js        # 凭据读写与 Token 掩码
+src/host/state.js        # 非机密状态：Account ID、代理偏好
 src/client/index.jsx     # 注册侧边栏图标与主面板
 src/client/app.jsx       # 配置页 / 已配置页
 src/client/locale.js     # 中英文案
@@ -83,7 +101,7 @@ pnpm run build                       # 生成 dist/client.js
 - ✅ M1 配置闭环（Token UI、校验、代理、诊断）
 - ✅ M2 概览首屏：站点选择、24h/7d/30d、访问趋势曲线、热门页面/来源/国家/浏览器、Core Web Vitals（P75 + 分布）
 - ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/操作系统维度、加载性能阶段分解（DNS/TCP/TLS/请求/响应/渲染/首绘）
-- ⬜ M4 单个聚合 agent 工具（不注入上下文，按需调用）
+- ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，未配置时不可见，按需调用）
 - ⬜ M5 开源收尾（SECURITY.md、CI、发布）
 
 ## 数据说明
@@ -99,6 +117,8 @@ pnpm run build                       # 生成 dist/client.js
 | 加载性能（DNS/TCP/TLS/请求/响应/渲染/首绘） | `rumPerformanceEventsAdaptiveGroups.quantiles` 的 P75，微秒换算为毫秒 |
 
 **不包含带宽/流量字节**：RUM 数据集没有该指标，官网 Web Analytics 的「Data served」无法等价复现，面板里也没有伪造。时间桶按 UTC 取回、按浏览器本地时区展示。
+
+**采样（重要）**：Cloudflare 对 RUM 数据集做 ABR 自适应采样。小流量站点只保留部分事件，再把计数按倍数外推，于是较长的范围反而可能给出**更少、更整**的行——实测同一站点 30d 返回 30 访问 / 2 个日期桶（全是 10 的整数倍），7d 却有 60 访问 / 6 个桶。所以**跨范围比大小没有意义**，也不是插件的 bug（官网看板同样如此；同一查询重复执行也可能有轻微差异，见[官方 FAQ](https://developers.cloudflare.com/analytics/faq/graphql-api-inconsistent-results/)）。该聚合节点只暴露 `count`/`sum`/`avg`/`confidence`，没有采样倍数字段，因此面板无法标注采样率；需要更准的数字就用较短的范围。
 
 **缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。
 

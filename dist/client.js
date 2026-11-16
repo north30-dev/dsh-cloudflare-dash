@@ -94,6 +94,8 @@ function writeProxyPrefs(prefs) {
     window.localStorage.setItem(PROXY_STORAGE_KEY, JSON.stringify(prefs));
   } catch {
   }
+  callApi("prefs", { method: "POST", body: { proxy: prefs } }).catch(() => {
+  });
 }
 function proxyQuery(proxy) {
   if (proxy.enabled !== true) return "";

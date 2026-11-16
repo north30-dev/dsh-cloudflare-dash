@@ -59,13 +59,16 @@ export function readProxyPrefs() {
   }
 }
 
-/** Persist the non-secret proxy preference. */
+/** Persist the non-secret proxy preference, here and in plugin state. */
 export function writeProxyPrefs(prefs) {
   try {
     window.localStorage.setItem(PROXY_STORAGE_KEY, JSON.stringify(prefs))
   } catch {
     // A blocked storage quota must not break configuration.
   }
+  // Mirror it into plugin state so the agent tool reaches Cloudflare the same
+  // way the panel does. Best effort: a failure only affects that tool.
+  callApi('prefs', { method: 'POST', body: { proxy: prefs } }).catch(() => {})
 }
 
 /**

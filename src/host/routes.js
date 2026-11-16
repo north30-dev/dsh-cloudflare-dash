@@ -100,6 +100,18 @@ async function readJsonBody(request) {
 }
 
 /**
+ * Shape a client proxy preference for storage. The panel sends this shape on
+ * every save, so it is also how the agent tool learns which proxy to use.
+ * @param {unknown} raw
+ * @returns {{ enabled: boolean, url: string } | undefined}
+ */
+function storedProxy(raw) {
+  if (raw === null || typeof raw !== 'object') return undefined
+  if (typeof raw.url !== 'string' || raw.url.trim() === '') return undefined
+  return { enabled: raw.enabled === true, url: raw.url.trim() }
+}
+
+/**
  * Translate a thrown value into an HTTP answer.
  * @param {import('node:http').ServerResponse} response
  * @param {unknown} error
@@ -151,16 +163,27 @@ export function registerRoutes(ctx) {
   }
 
   /**
-   * Proxy preference carried by a GET request.
+   * Proxy preference carried by a GET request, falling back to the stored one.
+   * The query string stays authoritative for the panel so a changed setting
+   * takes effect immediately; the stored copy is what the agent tool uses.
    * @param {import('node:http').IncomingMessage} request
    * @returns {{ host: string, port: number } | undefined}
    */
   function proxyOfRequest(request) {
     const url = new URL(request.url ?? '/', 'http://localhost')
-    return proxyFromSettings({
+    const asked = proxyFromSettings({
       enabled: url.searchParams.get('proxy') === '1',
       url: url.searchParams.get('proxyUrl') ?? undefined,
     })
+    if (asked !== undefined) return asked
+    const stored = readState().proxy
+    if (stored === undefined) return undefined
+    try {
+      return proxyFromSettings(stored)
+    } catch {
+      // A stale stored address must not break the panel; the query string wins.
+      return undefined
+    }
   }
 
   /**
@@ -220,11 +243,33 @@ export function registerRoutes(ctx) {
           const proxy = proxyFromSettings(body.proxy)
           const access = await describeAccess({ token, proxy, accountId })
           await store.save(token)
-          writeState({ accountId })
+          writeState({ accountId, proxy: storedProxy(body.proxy) })
           clearOverviewCache()
           verifiedAt = Date.now()
           lastAccess = access
           sendJson(response, 200, await describedState())
+        } catch (error) {
+          sendFailure(response, error)
+        }
+      },
+    }),
+
+    ctx.webServer.register({
+      kind: 'exact',
+      path: `${PREFIX}/prefs`,
+      handler: async (request, response) => {
+        if (request.method !== 'POST') {
+          response.writeHead(405, { allow: 'POST' })
+          response.end()
+          return
+        }
+        if (refuse(ctx, request, response)) return
+        try {
+          const body = await readJsonBody(request)
+          const proxy = storedProxy(body.proxy)
+          if (proxy !== undefined) proxyFromSettings(proxy)
+          writeState({ proxy })
+          sendJson(response, 200, { proxy: proxy ?? null })
         } catch (error) {
           sendFailure(response, error)
         }

@@ -213,6 +213,10 @@ export async function fetchOverview(options) {
   const to = new Date(now)
   const iso = (value) => value.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
+  // RUM aggregates are ABR-sampled by Cloudflare, and this node type exposes no
+  // sampling multiplier (only count/sum/avg/confidence), so the payload cannot
+  // report a sampling interval. A longer range may therefore return fewer,
+  // rounder rows than a shorter one; the README explains why.
   const query = buildQuery({
     accountTag: options.accountId,
     siteTag: site.siteTag,
