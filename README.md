@@ -82,7 +82,7 @@ pnpm run build                       # 生成 dist/client.js
 
 - ✅ M1 配置闭环（Token UI、校验、代理、诊断）
 - ✅ M2 概览首屏：站点选择、24h/7d/30d、访问趋势曲线、热门页面/来源/国家/浏览器、Core Web Vitals（P75 + 分布）
-- ⬜ M3 缓存与后台刷新、设备/系统维度、加载性能（FCP/首屏）细节
+- ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/操作系统维度、加载性能阶段分解（DNS/TCP/TLS/请求/响应/渲染/首绘）
 - ⬜ M4 单个聚合 agent 工具（不注入上下文，按需调用）
 - ⬜ M5 开源收尾（SECURITY.md、CI、发布）
 
@@ -94,14 +94,17 @@ pnpm run build                       # 生成 dist/client.js
 |---|---|
 | 访问数 | `rumPageloadEventsAdaptiveGroups.sum.visits` |
 | 页面加载 | `rumPageloadEventsAdaptiveGroups.count` |
-| 热门页面 / 来源 / 国家 / 浏览器 | 同名维度分组 |
+| 热门页面 / 来源 / 国家 / 浏览器 / 设备 / 系统 | 同名维度分组 |
 | Core Web Vitals | `rumWebVitalsEventsAdaptiveGroups` 的 good/needs-improvement/poor 与 P75 分位数 |
+| 加载性能（DNS/TCP/TLS/请求/响应/渲染/首绘） | `rumPerformanceEventsAdaptiveGroups.quantiles` 的 P75，微秒换算为毫秒 |
 
 **不包含带宽/流量字节**：RUM 数据集没有该指标，官网 Web Analytics 的「Data served」无法等价复现，面板里也没有伪造。时间桶按 UTC 取回、按浏览器本地时区展示。
+
+**缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。
 
 ## 限制
 
 - 只展示 Token 有权访问的账户与站点。
 - 未启用 Web Analytics 的站点不会出现在站点列表里（面板会给提示，不报错）。
 - 插件依赖 DSH 的 slot 契约（`sidebar.panellist` / `main`），`engines.dsh` 声明了已验证的最小版本。
-- License：Apache-2.0（由仓库维护者维护 `LICENSE` 文件）。
+- License：MIT（由仓库维护者维护 `LICENSE` 文件）。

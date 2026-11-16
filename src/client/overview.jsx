@@ -41,11 +41,12 @@ export function Overview({ t, proxy, onOpenSettings }) {
     }
   }, [proxyArgs])
 
-  const load = useCallback(() => {
+  const load = useCallback((fresh = false) => {
     if (siteTag === '') return
     setLoading(true)
     setError(null)
     const params = [`siteTag=${encodeURIComponent(siteTag)}`, `range=${range}`]
+    if (fresh) params.push('fresh=1')
     if (proxyArgs !== '') params.push(proxyArgs)
     callApi(`overview?${params.join('&')}`)
       .then((payload) => {
@@ -59,8 +60,18 @@ export function Overview({ t, proxy, onOpenSettings }) {
   }, [siteTag, range, proxyArgs])
 
   useEffect(() => {
-    load()
+    load(false)
   }, [load])
+
+  // Background refresh: the Host serves its cached payload while the TTL holds,
+  // so a 60s poll does not spend the GraphQL budget. Hidden tabs stay quiet.
+  useEffect(() => {
+    if (siteTag === '') return undefined
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load(false)
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [load, siteTag])
 
   const points = useMemo(() => {
     if (data === null) return []
@@ -105,7 +116,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
 
   const totals = data?.totals ?? { visits: 0, pageLoads: 0 }
   const previous = data?.previous ?? { visits: 0, pageLoads: 0 }
-  const top = data?.top ?? { paths: [], referrers: [], countries: [], browsers: [], devices: [] }
+  const top = data?.top ?? { paths: [], referrers: [], countries: [], browsers: [], devices: [], os: [] }
   const vitals = data?.vitals ?? null
   const visitsDelta = fmtDelta(totals.visits, previous.visits)
   const loadsDelta = fmtDelta(totals.pageLoads, previous.pageLoads)
@@ -137,7 +148,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
               </option>
             ))}
           </select>
-          <button className="cfd-btn" disabled={loading} onClick={load}>
+          <button className="cfd-btn" disabled={loading} onClick={() => load(true)}>
             {loading ? t('overview.refreshing') : t('overview.refresh')}
           </button>
           <button className="cfd-btn" onClick={onOpenSettings}>
@@ -189,6 +200,8 @@ export function Overview({ t, proxy, onOpenSettings }) {
         <ListCard title={t('list.referrers')} rows={top.referrers} t={t} directLabel={t('list.direct')} />
         <ListCard title={t('list.countries')} rows={top.countries} t={t} />
         <ListCard title={t('list.browsers')} rows={top.browsers} t={t} />
+        <ListCard title={t('list.devices')} rows={top.devices} t={t} />
+        <ListCard title={t('list.os')} rows={top.os} t={t} />
       </section>
 
       <section className="cfd-card">
@@ -210,9 +223,18 @@ export function Overview({ t, proxy, onOpenSettings }) {
         <p className="cfd-foot">{t('vitals.note')}</p>
       </section>
 
+      <section className="cfd-card">
+        <div className="cfd-card-head">
+          <h3 className="cfd-card-title">{t('perf.title')}</h3>
+          <span className="cfd-card-sub">{t('perf.sub')}</span>
+        </div>
+        <PerformanceCard performance={data?.performance ?? null} t={t} />
+      </section>
+
       <footer className="cfd-foot">
         {t('overview.footer')}
         {data === null ? '' : ` · ${new Date(data.generatedAt).toLocaleTimeString()}`}
+        {data?.cached === true ? ` · ${t('overview.cached')}` : ''}
       </footer>
     </div>
   )
@@ -304,6 +326,51 @@ function VitalTile({ label, value, metric, t }) {
           ? t('vitals.noSamples')
           : `${Math.round(share(metric.good))}% ${t('vitals.good')} · ${fmtInt(total)} ${t('vitals.samples')}`}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Loading phases reported by the RUM performance dataset.
+ * @param {{
+ *   performance: { samples: number, pageLoad: number | null, phases: Record<string, number | null> } | null,
+ *   t: (key: string) => string,
+ * }} props
+ */
+function PerformanceCard({ performance, t }) {
+  if (performance === null) return <p className="cfd-hint">{t('perf.empty')}</p>
+  const phases = [
+    ['dns', t('perf.dns')],
+    ['connection', t('perf.connection')],
+    ['tls', t('perf.tls')],
+    ['request', t('perf.request')],
+    ['response', t('perf.response')],
+    ['render', t('perf.render')],
+    ['firstPaint', t('perf.firstPaint')],
+    ['firstContentfulPaint', t('perf.fcp')],
+  ]
+  const max = Math.max(performance.pageLoad ?? 0, ...phases.map(([key]) => performance.phases[key] ?? 0), 1)
+  return (
+    <div className="cfd-perf">
+      <div className="cfd-perf-total">
+        <span className="cfd-perf-total-label">{t('perf.total')}</span>
+        <span className="cfd-perf-total-value">{fmtDuration(performance.pageLoad)}</span>
+      </div>
+      <ul className="cfd-perf-list">
+        {phases.map(([key, label]) => (
+          <li className="cfd-perf-row" key={key}>
+            <span className="cfd-perf-name">{label}</span>
+            <div className="cfd-perf-bar">
+              <div
+                className="cfd-perf-fill"
+                style={{ width: `${Math.max(2, ((performance.phases[key] ?? 0) / max) * 100)}%` }}
+              />
+            </div>
+            <span className="cfd-perf-value">{fmtDuration(performance.phases[key])}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="cfd-foot">{t('perf.note')}</p>
     </div>
   )
 }

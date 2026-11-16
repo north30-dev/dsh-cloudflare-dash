@@ -69,7 +69,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 5. **样式只使用 `--dsw-alias-*` 主题 token**，不写死颜色（深色主题下会看不见）；可见文案走 `src/client/locale.js` + `ctx.locale`。
 6. **面板自己负责滚动**：DSH 主面板给的是固定高度容器，页面根节点必须 `height:100%; overflow-y:auto`，否则滚轮无效、窗口变化不跟随。
 7. 路由是 exact 注册，绕过 DSH `/api` 栅栏，因此必须自己调 `connection.requestRejection`，缺失时退化为 loopback 校验，并拒绝 `sec-fetch-site: cross-site`。
-8. 不提交 `LICENSE`：Apache-2.0 由仓库维护者自己维护。
+8. 不提交 `LICENSE`：MIT 由仓库维护者自己维护。
 
 ## API 事实（踩过的坑，别再踩）
 
@@ -78,10 +78,11 @@ plugin_manager install_bundle  target=<本目录绝对路径>
   - `Account Analytics:Read` —— GraphQL RUM 数据集
 - 用户级 Token 是 **40 位**字符，长度不对 Cloudflare 返回 `400 code 6003 Invalid request headers`（不是 401）。
 - 帐户级 Token 值以 `cfat` 开头，**不能**用 `/user/tokens/verify`，要 `/accounts/{id}/tokens/verify`；Account ID 必填（32 位 hex）。
-- RUM 数据集：`rumPageloadEventsAdaptiveGroups`（`count`、`sum.visits`、维度 `datetimeHour`/`date`/`requestPath`/`refererHost`/`countryName`/`userAgentBrowser`/`deviceType`）、`rumWebVitalsEventsAdaptiveGroups`（good/needs/poor + P75 分位数）。
-- **Core Web Vitals 的时长单位是微秒**（`1212000` → 1.212 s），展示前除以 1000；CLS 是无量纲比值。
+- RUM 数据集：`rumPageloadEventsAdaptiveGroups`（`count`、`sum.visits`、维度 `datetimeHour`/`date`/`requestPath`/`refererHost`/`countryName`/`userAgentBrowser`/`deviceType`/`userAgentOS`）、`rumWebVitalsEventsAdaptiveGroups`（good/needs/poor + P75 分位数）、`rumPerformanceEventsAdaptiveGroups`（`quantiles` 里的 `pageLoadTimeP75` / `dnsTimeP75` / `connectionTimeP75` / `tlsTimeP75` / `requestTimeP75` / `responseTimeP75` / `pageRenderTimeP75` / `firstPaintP75` / `firstContentfulPaintP75`）。
+- **Core Web Vitals 与加载性能的时长单位都是微秒**（`1212000` → 1.212 s），展示前除以 1000；CLS 是无量纲比值。
 - 查询统一带 `bot: 0`，与官网口径对齐；时间桶按 UTC 取回，前端按本地时区格式化。
 - RUM **没有带宽/字节指标**，「Data served」无法复现，禁止编造。
+- 概览结果在 Host 内存里按 `账户:站点:范围` 缓存（24h 60s / 7d 120s / 30d 300s）；手动刷新传 `fresh=1` 绕过缓存，Token 变更时清空缓存。
 
 ## 自检方式
 
@@ -95,6 +96,6 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 
 - ✅ M1 配置闭环（Token UI、用户级/帐户级校验、代理开关、网络诊断）
 - ✅ M2 概览看板（站点/时间范围、趋势曲线、热门页面/来源/国家/浏览器、Core Web Vitals）
-- ⬜ M3 缓存与后台刷新、设备/系统维度、加载性能细分
+- ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/系统维度、加载性能阶段分解
 - ⬜ M4 单个聚合 agent 工具（`action` 参数，不注入上下文）
 - ⬜ M5 开源收尾（SECURITY.md、CI、npm 发布）

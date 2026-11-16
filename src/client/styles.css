@@ -607,3 +607,79 @@
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
 }
+
+.cfd-perf-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.cfd-perf-total-label {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.cfd-perf-total-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.cfd-perf-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cfd-perf-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 72px;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.cfd-perf-name {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.cfd-perf-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+
+.cfd-perf-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--dsw-alias-brand-primary);
+  opacity: 0.7;
+}
+
+.cfd-perf-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
+}
+
+@media (max-width: 640px) {
+  .cfd-page,
+  .cfd-page--wide {
+    padding: 16px 14px 32px;
+  }
+
+  .cfd-perf-row {
+    grid-template-columns: 96px 1fr 64px;
+  }
+
+  .cfd-kpi-value {
+    font-size: 24px;
+  }
+}

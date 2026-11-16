@@ -11,6 +11,21 @@ import { CloudflareError, callApi, graphql } from './cloudflare.js'
 const SITE_CACHE_MS = 60_000
 const TOP_LIMIT = 6
 
+/** How long one dashboard payload may be served from memory before re-querying. */
+const OVERVIEW_TTL_MS = { '24h': 60_000, '7d': 120_000, '30d': 300_000 }
+
+/**
+ * In-memory dashboard cache. A manual refresh bypasses it; automatic refreshes
+ * reuse it so a 60s poll cannot burn the GraphQL budget.
+ * @type {Map<string, { at: number, payload: any }>}
+ */
+const overviewCache = new Map()
+
+/** Drop every cached dashboard payload (after a Token change). */
+export function clearOverviewCache() {
+  overviewCache.clear()
+}
+
 /** @type {{ key: string, at: number, sites: Array<{ siteTag: string, host: string, enabled: boolean, created?: string }> }} */
 let siteCache = { key: '', at: 0, sites: [] }
 
@@ -106,6 +121,31 @@ function vitalsOf(row) {
 }
 
 /**
+ * Shape the loading-performance dataset.
+ * @param {any} row
+ */
+function performanceOf(row) {
+  if (row === undefined || row === null) return null
+  const quantiles = row.quantiles ?? {}
+  /** @param {string} key */
+  const phase = (key) => (typeof quantiles[key] === 'number' ? quantiles[key] : null)
+  return {
+    samples: num(row.count),
+    pageLoad: phase('pageLoadTimeP75'),
+    phases: {
+      dns: phase('dnsTimeP75'),
+      connection: phase('connectionTimeP75'),
+      tls: phase('tlsTimeP75'),
+      request: phase('requestTimeP75'),
+      response: phase('responseTimeP75'),
+      render: phase('pageRenderTimeP75'),
+      firstPaint: phase('firstPaintP75'),
+      firstContentfulPaint: phase('firstContentfulPaintP75'),
+    },
+  }
+}
+
+/**
  * Build the fixed dashboard document for one range.
  * Values are validated (hex tags, ISO instants) before interpolation, so the
  * document never carries caller-controlled text.
@@ -127,6 +167,11 @@ function buildQuery(input) {
     ${top('countries', 'countryName')}
     ${top('browsers', 'userAgentBrowser')}
     ${top('devices', 'deviceType')}
+    ${top('os', 'userAgentOS')}
+    performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${current}) {
+      count
+      quantiles { pageLoadTimeP75 dnsTimeP75 connectionTimeP75 tlsTimeP75 requestTimeP75 responseTimeP75 pageRenderTimeP75 firstPaintP75 firstContentfulPaintP75 }
+    }
     vitals: rumWebVitalsEventsAdaptiveGroups(limit: 1, ${current}) {
       count
       sum { visits lcpGood lcpNeedsImprovement lcpPoor lcpTotal inpGood inpNeedsImprovement inpPoor inpTotal clsGood clsNeedsImprovement clsPoor clsTotal fcpGood fcpNeedsImprovement fcpPoor fcpTotal ttfbGood ttfbNeedsImprovement ttfbPoor ttfbTotal }
@@ -144,6 +189,7 @@ function buildQuery(input) {
  *   range: string,
  *   token: string,
  *   proxy?: { host: string, port: number },
+ *   fresh?: boolean,
  * }} options
  * @returns {Promise<object>}
  */
@@ -151,6 +197,12 @@ export async function fetchOverview(options) {
   const spec = RANGES[options.range]
   if (spec === undefined) throw new CloudflareError('bad-range', '不支持的时间范围')
   if (!/^[0-9a-f]{32}$/i.test(options.siteTag)) throw new CloudflareError('bad-site', 'siteTag 不合法')
+
+  const cacheKey = `${options.accountId}:${options.siteTag}:${options.range}`
+  const cached = overviewCache.get(cacheKey)
+  if (options.fresh !== true && cached !== undefined && Date.now() - cached.at < OVERVIEW_TTL_MS[options.range]) {
+    return { ...cached.payload, cached: true }
+  }
 
   const sites = await listSites(options)
   const site = sites.find((entry) => entry.siteTag === options.siteTag)
@@ -178,7 +230,7 @@ export async function fetchOverview(options) {
   const previousRow = account.previous?.[0]
   const series = Array.isArray(account.series) ? account.series : []
 
-  return {
+  const payload = {
     site: { siteTag: site.siteTag, host: site.host, enabled: site.enabled },
     range: options.range,
     window: { from: iso(from), to: iso(to) },
@@ -195,8 +247,13 @@ export async function fetchOverview(options) {
       countries: (account.countries ?? []).map((row) => rowOf(row, 'countryName')).filter((row) => row.name !== ''),
       browsers: (account.browsers ?? []).map((row) => rowOf(row, 'userAgentBrowser')).filter((row) => row.name !== ''),
       devices: (account.devices ?? []).map((row) => rowOf(row, 'deviceType')).filter((row) => row.name !== ''),
+      os: (account.os ?? []).map((row) => rowOf(row, 'userAgentOS')).filter((row) => row.name !== ''),
     },
     vitals: vitalsOf(account.vitals?.[0]),
+    performance: performanceOf(account.performance?.[0]),
     generatedAt: Date.now(),
   }
+
+  overviewCache.set(cacheKey, { at: Date.now(), payload })
+  return { ...payload, cached: false }
 }

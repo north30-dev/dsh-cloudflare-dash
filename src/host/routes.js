@@ -8,7 +8,7 @@
  */
 import { CloudflareError, describeAccess } from './cloudflare.js'
 import { HttpError, probe, proxyFromSettings } from './http.js'
-import { RANGES, fetchOverview, listSites } from './analytics.js'
+import { RANGES, clearOverviewCache, fetchOverview, listSites } from './analytics.js'
 import { readState, writeState } from './state.js'
 import { createTokenStore, normalizeAccountId, normalizeToken } from './store.js'
 
@@ -210,6 +210,7 @@ export function registerRoutes(ctx) {
             await store.clear()
             verifiedAt = undefined
             lastAccess = undefined
+            clearOverviewCache()
             sendJson(response, 200, await describedState())
             return
           }
@@ -220,6 +221,7 @@ export function registerRoutes(ctx) {
           const access = await describeAccess({ token, proxy, accountId })
           await store.save(token)
           writeState({ accountId })
+          clearOverviewCache()
           verifiedAt = Date.now()
           lastAccess = access
           sendJson(response, 200, await describedState())
@@ -263,8 +265,9 @@ export function registerRoutes(ctx) {
           const range = url.searchParams.get('range') ?? '7d'
           if (RANGES[range] === undefined) throw new HttpError('bad-request', '不支持的时间范围')
           const siteTag = url.searchParams.get('siteTag') ?? ''
+          const fresh = url.searchParams.get('fresh') === '1'
           const context = await dataContext(request)
-          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range }))
+          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range, fresh }))
         } catch (error) {
           sendFailure(response, error)
         }
