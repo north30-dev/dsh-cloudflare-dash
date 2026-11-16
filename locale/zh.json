@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Cloudflare 看板",
+    "description": "基于 Cloudflare 官方 API 的 DeepSeek Harness 看板插件。当前仅为项目脚手架，尚未实现看板功能。",
+    "detail": "docs/DETAIL.md"
+  }
+}

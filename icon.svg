@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" role="img" aria-label="Cloudflare dashboard">
+  <rect x="8" y="19" width="5" height="8" rx="2.5" fill="#7C93B8" />
+  <rect x="15.5" y="13.5" width="5" height="13.5" rx="2.5" fill="#7C93B8" />
+  <rect x="23" y="8" width="5" height="19" rx="2.5" fill="#2F5D8C" />
+  <path d="M6 29.5h24" stroke="#2F5D8C" stroke-opacity="0.55" stroke-width="2" stroke-linecap="round" />
+</svg>

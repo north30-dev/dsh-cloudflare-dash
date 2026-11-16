@@ -1,0 +1,3 @@
+- insert:
+    - id: cloudflare-dash
+      name: '@local/dsh-cloudflare-dash'
