@@ -1,6 +1,10 @@
 .cfd-page {
   box-sizing: border-box;
-  max-width: 760px;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  /* The main panel hands its page a fixed-height box: the page owns scrolling,
+     and inheriting the box height is what makes it follow the window. */
   padding: 28px 28px 40px;
   color: var(--dsw-alias-label-primary);
 }
@@ -220,8 +224,7 @@
 /* ------------------------------------------------------------------ */
 
 .cfd-page--wide {
-  max-width: 1180px;
-  padding: 24px 28px 40px;
+  padding: 24px 32px 48px;
 }
 
 .cfd-topbar {
@@ -255,6 +258,12 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.cfd-kpi-row > *,
+.cfd-grid-2 > *,
+.cfd-vitals > * {
+  min-width: 0;
 }
 
 .cfd-kpi {
@@ -333,6 +342,7 @@
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
   margin: 12px 0;
+  align-items: start;
 }
 
 .cfd-grid-2 .cfd-card {
