@@ -8,7 +8,8 @@
  */
 import { CloudflareError, describeAccess } from './cloudflare.js'
 import { HttpError, probe, proxyFromSettings } from './http.js'
-import { createTokenStore, normalizeToken } from './store.js'
+import { readState, writeState } from './state.js'
+import { createTokenStore, normalizeAccountId, normalizeToken } from './store.js'
 
 const PREFIX = '/cloudflare-dash/api/v1'
 const MAX_BODY_BYTES = 4096
@@ -138,8 +139,10 @@ export function registerRoutes(ctx) {
    */
   async function describedState() {
     const described = await store.describe()
+    const state = readState()
     return {
       ...described,
+      ...(state.accountId === undefined ? {} : { accountId: state.accountId }),
       ...(verifiedAt === undefined ? {} : { verifiedAt }),
       ...(lastAccess === undefined ? {} : lastAccess),
     }
@@ -184,9 +187,11 @@ export function registerRoutes(ctx) {
           }
           const body = await readJsonBody(request)
           const token = normalizeToken(body.token)
+          const accountId = normalizeAccountId(body.accountId)
           const proxy = proxyFromSettings(body.proxy)
-          const access = await describeAccess({ token, proxy })
+          const access = await describeAccess({ token, proxy, accountId })
           await store.save(token)
+          writeState({ accountId })
           verifiedAt = Date.now()
           lastAccess = access
           sendJson(response, 200, await describedState())

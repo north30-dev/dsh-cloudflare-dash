@@ -65,6 +65,21 @@ export function looksLikeGlobalKey(value) {
 }
 
 /**
+ * Validate an optional Account ID. Account-owned tokens are verified against an
+ * account, so this value is required for them and harmless for user tokens.
+ * @param {unknown} raw
+ * @returns {string | undefined}
+ */
+export function normalizeAccountId(raw) {
+  if (raw === undefined || raw === null || raw === '') return undefined
+  if (typeof raw !== 'string') throw new Error('Account ID 必须是字符串')
+  const value = raw.trim()
+  if (value === '') return undefined
+  if (!/^[0-9a-f]{32}$/i.test(value)) throw new Error('Account ID 应为 32 位十六进制字符串')
+  return value.toLowerCase()
+}
+
+/**
  * Build the credential-backed Token store over the Host context.
  * @param {{ get: (name: string) => unknown }} ctx
  */

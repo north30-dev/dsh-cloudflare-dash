@@ -91,14 +91,17 @@ function formatTime(value) {
 }
 
 /**
- * Recognise the two values users most often paste instead of a token.
+ * Recognise the values users most often paste instead of a user token value.
  * @param {string} value
- * @returns {'token-id' | 'global-key' | null}
+ * @returns {'token-id' | 'global-key' | 'account-token' | 'bad-length' | null}
  */
 function suspiciousToken(value) {
   const trimmed = value.trim()
+  if (trimmed === '') return null
+  if (/^cfat[-_]/i.test(trimmed)) return 'account-token'
   if (/^[0-9a-f]{32}$/i.test(trimmed)) return 'token-id'
   if (/^[0-9a-f]{37}$/i.test(trimmed)) return 'global-key'
+  if (trimmed.length !== 40) return 'bad-length'
   return null
 }
 
@@ -111,6 +114,7 @@ export function Panel({ t }) {
   const [busy, setBusy] = useState(false)
   const [probing, setProbing] = useState(false)
   const [token, setToken] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [replacing, setReplacing] = useState(false)
   const [proxyEnabled, setProxyEnabled] = useState(false)
   const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL)
@@ -126,6 +130,7 @@ export function Panel({ t }) {
       .then((data) => {
         if (cancelled) return
         setStatus(data)
+        if (typeof data.accountId === 'string') setAccountId(data.accountId)
         setPhase('ready')
       })
       .catch((error) => {
@@ -159,7 +164,10 @@ export function Panel({ t }) {
     setBusy(true)
     setNotice(null)
     try {
-      const data = await callApi('token', { method: 'POST', body: { token: value, proxy: proxy() } })
+      const data = await callApi('token', {
+        method: 'POST',
+        body: { token: value, accountId: accountId.trim(), proxy: proxy() },
+      })
       setStatus(data)
       setToken('')
       setReplacing(false)
@@ -229,8 +237,30 @@ export function Panel({ t }) {
           </button>
         </div>
         {suspicious === null ? null : (
-          <p className="cfd-hint cfd-warn">{suspicious === 'token-id' ? t('warn.tokenId') : t('warn.globalKey')}</p>
+          <p className="cfd-hint cfd-warn">
+            {suspicious === 'token-id'
+              ? t('warn.tokenId')
+              : suspicious === 'global-key'
+                ? t('warn.globalKey')
+                : suspicious === 'account-token'
+                  ? t('warn.accountToken')
+                  : t('warn.tokenLength')}
+          </p>
         )}
+        <div className="cfd-row" style={{ marginTop: '10px' }}>
+          <input
+            className="cfd-input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t('placeholder.accountId')}
+            value={accountId}
+            onChange={(event) => setAccountId(event.target.value)}
+          />
+        </div>
+        <p className="cfd-hint">
+          <span className="cfd-desc">{t('label.accountId')}</span> {t('hint.accountId')}
+        </p>
         <p className="cfd-hint">
           <a className="cfd-link" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">
             {t('step.token.console')}
@@ -337,6 +367,7 @@ export function Panel({ t }) {
               <p className="cfd-hint">
                 {status.source === 'environment' ? t('status.source.environment') : t('status.source.stored')}
                 {status.source === 'environment' ? ` · ${t('hint.envFallback')}` : ''}
+                {typeof status.accountId === 'string' ? ` · Account ID: ${status.accountId}` : ''}
               </p>
               {status.rumSites === 0 ? <p className="cfd-hint">{t('status.noSites')}</p> : null}
               {typeof status.hint === 'string' ? <p className="cfd-hint">{status.hint}</p> : null}

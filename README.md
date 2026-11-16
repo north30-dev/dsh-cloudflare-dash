@@ -16,16 +16,26 @@ DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通�
 3. 刷新页面，点侧边栏的柱状图标 → 粘贴 Token → 「验证并保存」。
 4. 看到「✅ 验证通过：N 个账户 / M 个 Web Analytics 站点」即配置完成。
 
-Token 保存在 DSH 凭据库（`~/.credentials.yaml` 的记录 `dsh-cloudflare-dash/api-token`），不会写入仓库、不会进入会话上下文、不会回传浏览器。
+### 两种令牌
+
+| 你创建的位置 | 面板里怎么填 |
+|---|---|
+| **Profile → API Tokens**（用户级，40 位字符） | 只填 Token，Account ID 留空 |
+| **Manage Account → Account API Tokens**（帐户级，值以 `cfat` 开头） | Token + **Account ID**（32 位十六进制，在后台概览页 URL 里） |
+
+帐户级令牌不能用 `/user/tokens/verify` 校验，插件会改用 `/accounts/{id}/tokens/verify`；没填 Account ID 时会在报错里提示。
+
+Token 保存在 DSH 凭据库（`~/.credentials.yaml` 的记录 `dsh-cloudflare-dash/api-token`），Account ID 是非机密，保存在 `$DSH_HOME/cloudflare-dash/state.json`。两者都不会写入仓库、不会进入会话上下文、不会回传浏览器。
 
 ### 验证失败？“Invalid API Token”
 
 按顺序排查：
 
 1. **复制的是 Token ID，不是 Token 值**。Token ID 是 32 位十六进制串，Token 值只在创建完成时显示一次。面板现在会在输入框下方直接警告这种输入。
-2. **创建流程没走完**。必须点 `Continue to summary` → `Create Token`；中途关掉页面不会生成可用 Token。
-3. **用了 Global API Key**。本插件只支持 API Token；Global API Key 是 37 位十六进制串，面板同样会提示。
-4. **用了「账户 API 令牌」（Account-owned token）**。这类 Token 不能通过 `/user/tokens/verify` 校验，插件会退回到账户列表校验；如果你的账户级 Token 也返回 Invalid，请改用 Profile → API Tokens 创建的用户级 Token。
+2. **没复制完整**。用户级 API Token 是 40 位字符；长度不对时 Cloudflare 返回的是 `400 Invalid request headers`（错误码 6003）而不是 401，插件已把它翻译成可读提示。
+3. **创建流程没走完**。必须点 `Continue to summary` → `Create Token`；中途关掉页面不会生成可用 Token。
+4. **用了 Global API Key**。本插件只支持 API Token；Global API Key 是 37 位十六进制串，面板同样会提示。
+5. **用了「帐户 API 令牌」却没填 Account ID**。这类令牌过不了用户级校验接口，必须填 Account ID 走账户级校验。
 
 ## 权限与隐私
 

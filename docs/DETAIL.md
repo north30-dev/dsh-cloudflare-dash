@@ -18,7 +18,7 @@
 
 1. 创建只读 Token：Profile → API Tokens → Create Custom Token，勾选 `Account Settings:Read`、`Account Analytics:Read`，资源选自己的账户（没有 Web Analytics 这个权限组）。
 2. 安装插件并刷新页面。
-3. 点侧边栏柱状图标，粘贴 Token，点「验证并保存」。
+3. 点侧边栏柱状图标，粘贴 Token，点「验证并保存」。用户级 Token 留空 Account ID；「帐户 API 令牌」（`cfat…`）必须填 Account ID（后台概览页 URL 里的 32 位十六进制）。
 4. 验证通过后面板显示账户与站点计数；点击「网络诊断」可确认当前链路质量。
 
 Token 只保存在本机 DSH 凭据库，浏览器与面板只看到掩码。也可通过启动环境变量 `CLOUDFLARE_API_TOKEN` 提供（UI 保存的记录优先）。

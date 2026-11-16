@@ -11,6 +11,9 @@ export const zh = {
   'perm.list': 'Account Settings:Read · Account Analytics:Read',
   'step.token.console': '打开 Cloudflare API Token 页面',
   'step.token.placeholder': '粘贴 API Token',
+  'label.accountId': 'Account ID（「帐户 API 令牌」必填）',
+  'placeholder.accountId': '32 位十六进制，例如 023e105f…',
+  'hint.accountId': '用户级令牌（Profile → API Tokens）可留空；帐户级令牌必须填写，Account ID 在 Cloudflare 后台概览页的 URL 里。',
   'step.token.save': '验证并保存',
   'step.token.saving': '正在验证…',
   'step.proxy.title': '2. 网络与代理（可选）',
@@ -43,6 +46,8 @@ export const zh = {
   'error.missingHint': '缺少权限',
   'warn.tokenId': '这看起来是 32 位 Token ID，不是 Token 值',
   'warn.globalKey': '这看起来是 Global API Key，本插件只支持 API Token',
+  'warn.accountToken': '这是「帐户 API 令牌」，必须填写 Account ID 才能校验',
+  'warn.tokenLength': '用户 API Token 通常是 40 位字符，当前长度不对，请检查是否复制完整',
   'hint.unauthorized': '请确认：① 复制的是创建完成时显示的 Token 值，不是 Token ID；② 创建流程已走完 Continue to summary → Create Token；③ 没有使用 Global API Key。',
 }
 
@@ -56,6 +61,9 @@ export const en = {
   'perm.list': 'Account Settings:Read · Account Analytics:Read',
   'step.token.console': 'Open the Cloudflare API token page',
   'step.token.placeholder': 'Paste your API token',
+  'label.accountId': 'Account ID (required for account API tokens)',
+  'placeholder.accountId': '32 hex characters, e.g. 023e105f…',
+  'hint.accountId': 'Leave empty for a user token (Profile → API Tokens). An account API token requires it; find the Account ID in the dashboard overview URL.',
   'step.token.save': 'Verify and save',
   'step.token.saving': 'Verifying…',
   'step.proxy.title': '2. Network and proxy (optional)',
@@ -88,5 +96,7 @@ export const en = {
   'error.missingHint': 'Missing permission',
   'warn.tokenId': 'This looks like a 32-character token ID, not the token value',
   'warn.globalKey': 'This looks like the Global API Key; only API tokens are supported',
+  'warn.accountToken': 'This is an account API token; fill in its Account ID to verify it',
+  'warn.tokenLength': 'A user API token is normally 40 characters; check that the whole value was copied',
   'hint.unauthorized': 'Check that you copied the token value shown after creation (not the token ID), that the create flow finished with Continue to summary → Create Token, and that you did not paste the Global API Key.',
 }

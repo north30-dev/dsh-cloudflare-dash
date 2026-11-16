@@ -108,8 +108,11 @@ function formatTime(value) {
 }
 function suspiciousToken(value) {
   const trimmed = value.trim();
+  if (trimmed === "") return null;
+  if (/^cfat[-_]/i.test(trimmed)) return "account-token";
   if (/^[0-9a-f]{32}$/i.test(trimmed)) return "token-id";
   if (/^[0-9a-f]{37}$/i.test(trimmed)) return "global-key";
+  if (trimmed.length !== 40) return "bad-length";
   return null;
 }
 function Panel({ t }) {
@@ -118,6 +121,7 @@ function Panel({ t }) {
   const [busy, setBusy] = (0, import_react.useState)(false);
   const [probing, setProbing] = (0, import_react.useState)(false);
   const [token, setToken] = (0, import_react.useState)("");
+  const [accountId, setAccountId] = (0, import_react.useState)("");
   const [replacing, setReplacing] = (0, import_react.useState)(false);
   const [proxyEnabled, setProxyEnabled] = (0, import_react.useState)(false);
   const [proxyUrl, setProxyUrl] = (0, import_react.useState)(DEFAULT_PROXY_URL);
@@ -131,6 +135,7 @@ function Panel({ t }) {
     callApi("status").then((data) => {
       if (cancelled) return;
       setStatus(data);
+      if (typeof data.accountId === "string") setAccountId(data.accountId);
       setPhase("ready");
     }).catch((error) => {
       if (cancelled) return;
@@ -161,7 +166,10 @@ ${t("hint.unauthorized")}`;
     setBusy(true);
     setNotice(null);
     try {
-      const data = await callApi("token", { method: "POST", body: { token: value, proxy: proxy() } });
+      const data = await callApi("token", {
+        method: "POST",
+        body: { token: value, accountId: accountId.trim(), proxy: proxy() }
+      });
       setStatus(data);
       setToken("");
       setReplacing(false);
@@ -217,7 +225,18 @@ ${t("hint.unauthorized")}`;
           if (event.key === "Enter") void handleSave();
         }
       }
-    ), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn cfd-btn--primary", disabled: busy, onClick: () => void handleSave() }, busy ? t("step.token.saving") : t("step.token.save"))), suspicious === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint cfd-warn" }, suspicious === "token-id" ? t("warn.tokenId") : t("warn.globalKey")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("a", { className: "cfd-link", href: "https://dash.cloudflare.com/profile/api-tokens", target: "_blank", rel: "noreferrer" }, t("step.token.console"))));
+    ), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn cfd-btn--primary", disabled: busy, onClick: () => void handleSave() }, busy ? t("step.token.saving") : t("step.token.save"))), suspicious === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint cfd-warn" }, suspicious === "token-id" ? t("warn.tokenId") : suspicious === "global-key" ? t("warn.globalKey") : suspicious === "account-token" ? t("warn.accountToken") : t("warn.tokenLength")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-row", style: { marginTop: "10px" } }, /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        className: "cfd-input",
+        type: "text",
+        autoComplete: "off",
+        spellCheck: false,
+        placeholder: t("placeholder.accountId"),
+        value: accountId,
+        onChange: (event) => setAccountId(event.target.value)
+      }
+    )), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-desc" }, t("label.accountId")), " ", t("hint.accountId")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, /* @__PURE__ */ import_react.default.createElement("a", { className: "cfd-link", href: "https://dash.cloudflare.com/profile/api-tokens", target: "_blank", rel: "noreferrer" }, t("step.token.console"))));
   }
   function renderProxy() {
     return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-label" }, t("step.proxy.title")), /* @__PURE__ */ import_react.default.createElement("label", { className: "cfd-check" }, /* @__PURE__ */ import_react.default.createElement(
@@ -253,7 +272,7 @@ ${t("hint.unauthorized")}`;
     ].filter(([, value]) => value !== void 0 && value !== null);
     return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-probe" }, rows.map(([key, value, label]) => /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-probe-row", key }, /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-probe-name" }, label), /* @__PURE__ */ import_react.default.createElement("span", null, value.ok ? t("probe.ok") : t("probe.fail")), value.ok ? /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("span", null, "DNS ", formatMs(value.timings?.dnsMs)), /* @__PURE__ */ import_react.default.createElement("span", null, "TLS ", formatMs(value.timings?.tlsMs)), /* @__PURE__ */ import_react.default.createElement("span", null, "TTFB ", formatMs(value.timings?.ttfbMs)), /* @__PURE__ */ import_react.default.createElement("span", null, "Total ", formatMs(value.timings?.totalMs))) : /* @__PURE__ */ import_react.default.createElement("span", null, (value.error?.code ?? "network") + " \xB7 " + (value.error?.message ?? "")))));
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react.default.createElement("header", { className: "cfd-head" }, /* @__PURE__ */ import_react.default.createElement("h2", { className: "cfd-title" }, t("title")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-sub" }, t("subtitle"))), phase === "loading" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("loading")) : /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-card" }, configured ? /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-meta" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, status.masked ?? "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.masked"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value" }, typeof status.accounts === "number" ? status.accounts : "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.accounts"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value" }, typeof status.rumSites === "number" ? status.rumSites : "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.sites"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, verifiedAt ?? t("status.neverVerified")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.verified")))), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, status.source === "environment" ? t("status.source.environment") : t("status.source.stored"), status.source === "environment" ? ` \xB7 ${t("hint.envFallback")}` : ""), status.rumSites === 0 ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("status.noSites")) : null, typeof status.hint === "string" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, status.hint) : null, replacing ? renderTokenForm() : null, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-actions" }, /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => setReplacing(!replacing) }, t("action.replace")), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => void handleDelete() }, t("action.delete")))) : renderTokenForm(), renderProxy(), notice === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: notice.kind === "ok" ? "cfd-hint cfd-ok" : "cfd-error" }, notice.text), renderProbe()));
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react.default.createElement("header", { className: "cfd-head" }, /* @__PURE__ */ import_react.default.createElement("h2", { className: "cfd-title" }, t("title")), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-sub" }, t("subtitle"))), phase === "loading" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("loading")) : /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-card" }, configured ? /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-meta" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, status.masked ?? "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.masked"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value" }, typeof status.accounts === "number" ? status.accounts : "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.accounts"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value" }, typeof status.rumSites === "number" ? status.rumSites : "\u2014"), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.sites"))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, verifiedAt ?? t("status.neverVerified")), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-metric-label" }, t("status.verified")))), /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, status.source === "environment" ? t("status.source.environment") : t("status.source.stored"), status.source === "environment" ? ` \xB7 ${t("hint.envFallback")}` : "", typeof status.accountId === "string" ? ` \xB7 Account ID: ${status.accountId}` : ""), status.rumSites === 0 ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, t("status.noSites")) : null, typeof status.hint === "string" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-hint" }, status.hint) : null, replacing ? renderTokenForm() : null, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-actions" }, /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => setReplacing(!replacing) }, t("action.replace")), /* @__PURE__ */ import_react.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => void handleDelete() }, t("action.delete")))) : renderTokenForm(), renderProxy(), notice === null ? null : /* @__PURE__ */ import_react.default.createElement("p", { className: notice.kind === "ok" ? "cfd-hint cfd-ok" : "cfd-error" }, notice.text), renderProbe()));
 }
 function PanelIcon({ size = 20, active = false }) {
   return /* @__PURE__ */ import_react.default.createElement(
@@ -285,6 +304,9 @@ var zh = {
   "perm.list": "Account Settings:Read \xB7 Account Analytics:Read",
   "step.token.console": "\u6253\u5F00 Cloudflare API Token \u9875\u9762",
   "step.token.placeholder": "\u7C98\u8D34 API Token",
+  "label.accountId": "Account ID\uFF08\u300C\u5E10\u6237 API \u4EE4\u724C\u300D\u5FC5\u586B\uFF09",
+  "placeholder.accountId": "32 \u4F4D\u5341\u516D\u8FDB\u5236\uFF0C\u4F8B\u5982 023e105f\u2026",
+  "hint.accountId": "\u7528\u6237\u7EA7\u4EE4\u724C\uFF08Profile \u2192 API Tokens\uFF09\u53EF\u7559\u7A7A\uFF1B\u5E10\u6237\u7EA7\u4EE4\u724C\u5FC5\u987B\u586B\u5199\uFF0CAccount ID \u5728 Cloudflare \u540E\u53F0\u6982\u89C8\u9875\u7684 URL \u91CC\u3002",
   "step.token.save": "\u9A8C\u8BC1\u5E76\u4FDD\u5B58",
   "step.token.saving": "\u6B63\u5728\u9A8C\u8BC1\u2026",
   "step.proxy.title": "2. \u7F51\u7EDC\u4E0E\u4EE3\u7406\uFF08\u53EF\u9009\uFF09",
@@ -317,6 +339,8 @@ var zh = {
   "error.missingHint": "\u7F3A\u5C11\u6743\u9650",
   "warn.tokenId": "\u8FD9\u770B\u8D77\u6765\u662F 32 \u4F4D Token ID\uFF0C\u4E0D\u662F Token \u503C",
   "warn.globalKey": "\u8FD9\u770B\u8D77\u6765\u662F Global API Key\uFF0C\u672C\u63D2\u4EF6\u53EA\u652F\u6301 API Token",
+  "warn.accountToken": "\u8FD9\u662F\u300C\u5E10\u6237 API \u4EE4\u724C\u300D\uFF0C\u5FC5\u987B\u586B\u5199 Account ID \u624D\u80FD\u6821\u9A8C",
+  "warn.tokenLength": "\u7528\u6237 API Token \u901A\u5E38\u662F 40 \u4F4D\u5B57\u7B26\uFF0C\u5F53\u524D\u957F\u5EA6\u4E0D\u5BF9\uFF0C\u8BF7\u68C0\u67E5\u662F\u5426\u590D\u5236\u5B8C\u6574",
   "hint.unauthorized": "\u8BF7\u786E\u8BA4\uFF1A\u2460 \u590D\u5236\u7684\u662F\u521B\u5EFA\u5B8C\u6210\u65F6\u663E\u793A\u7684 Token \u503C\uFF0C\u4E0D\u662F Token ID\uFF1B\u2461 \u521B\u5EFA\u6D41\u7A0B\u5DF2\u8D70\u5B8C Continue to summary \u2192 Create Token\uFF1B\u2462 \u6CA1\u6709\u4F7F\u7528 Global API Key\u3002"
 };
 var en = {
@@ -329,6 +353,9 @@ var en = {
   "perm.list": "Account Settings:Read \xB7 Account Analytics:Read",
   "step.token.console": "Open the Cloudflare API token page",
   "step.token.placeholder": "Paste your API token",
+  "label.accountId": "Account ID (required for account API tokens)",
+  "placeholder.accountId": "32 hex characters, e.g. 023e105f\u2026",
+  "hint.accountId": "Leave empty for a user token (Profile \u2192 API Tokens). An account API token requires it; find the Account ID in the dashboard overview URL.",
   "step.token.save": "Verify and save",
   "step.token.saving": "Verifying\u2026",
   "step.proxy.title": "2. Network and proxy (optional)",
@@ -361,6 +388,8 @@ var en = {
   "error.missingHint": "Missing permission",
   "warn.tokenId": "This looks like a 32-character token ID, not the token value",
   "warn.globalKey": "This looks like the Global API Key; only API tokens are supported",
+  "warn.accountToken": "This is an account API token; fill in its Account ID to verify it",
+  "warn.tokenLength": "A user API token is normally 40 characters; check that the whole value was copied",
   "hint.unauthorized": "Check that you copied the token value shown after creation (not the token ID), that the create flow finished with Continue to summary \u2192 Create Token, and that you did not paste the Global API Key."
 };
 

@@ -95,6 +95,16 @@ export async function callApi(path, options) {
     })
   }
   if (payload?.success !== true) {
+    const first = Array.isArray(payload?.errors) ? payload.errors[0] : undefined
+    // 6003 covers a malformed Authorization header, which Cloudflare returns for
+    // a truncated token; the raw "Invalid request headers" never explains why.
+    if (first?.code === 6003) {
+      throw new CloudflareError(
+        'bad-headers',
+        'Token 格式不被接受（Cloudflare: Invalid request headers）。用户 API Token 通常为 40 位字符，请确认复制完整；「帐户 API 令牌」还需要填写 Account ID。',
+        { status: 400 },
+      )
+    }
     const described = describeEnvelope(payload)
     throw new CloudflareError('api', described.message, { status: response.status, missing: described.missing })
   }
@@ -149,42 +159,81 @@ async function summarize(options, accountList, ownership) {
 }
 
 /**
+ * Verify an account-owned token against its account.
+ * @param {{ token: string, proxy?: { host: string, port: number }, accountId?: string }} options
+ * @param {string} accountId
+ * @returns {Promise<object | undefined>} undefined when the value is not an account token.
+ */
+async function tryAccountOwnedToken(options, accountId) {
+  let verified
+  try {
+    verified = await callApi(`/accounts/${accountId}/tokens/verify`, options)
+  } catch (error) {
+    if (error instanceof CloudflareError) {
+      const inconclusive = ['unauthorized', 'forbidden', 'api', 'inactive']
+      if (inconclusive.includes(error.code)) return undefined
+    }
+    throw error
+  }
+  if (verified?.status !== 'active') return undefined
+  return await summarize(options, [{ id: accountId }], 'account')
+}
+
+/**
  * Verify a Token and report what it can reach.
  *
- * Two token kinds exist. A user-owned token verifies at `/user/tokens/verify`; an
- * account-owned token answers 401 there but still works account-scoped, so a 401
- * falls back to listing accounts and is only reported as invalid when that also
- * fails. Distinguishing them here is what keeps "创建的令牌不生效" from being a
- * dead end for users who picked the account-scoped create flow.
- * @param {{ token: string, proxy?: { host: string, port: number } }} options
+ * Three shapes are supported:
+ * - a user-owned token: verified at `/user/tokens/verify`;
+ * - an account-owned token plus its Account ID: verified at
+ *   `/accounts/{id}/tokens/verify` (the user endpoint answers 401 for these);
+ * - an account-owned token without an Account ID: `/user/tokens/verify` answers
+ *   401, so account listing is tried as a last resort and the failure explains
+ *   that an Account ID is the missing input.
+ * @param {{ token: string, proxy?: { host: string, port: number }, accountId?: string }} options
  * @returns {Promise<{ accounts: number, rumSites: number, ownership: 'user' | 'account', capabilities: { rum: boolean, zone: boolean, rumDenied: boolean }, hint?: string }>}
  */
 export async function describeAccess(options) {
-  let verified
-  try {
-    verified = await callApi('/user/tokens/verify', options)
-  } catch (error) {
-    if (!(error instanceof CloudflareError) || error.code !== 'unauthorized') throw error
-    let accounts
-    try {
-      accounts = await callApi('/accounts?per_page=50', options)
-    } catch (fallbackError) {
-      if (fallbackError instanceof CloudflareError) {
-        // An invalid token answers 401 here too, but Cloudflare sometimes says
-        // 403 "Invalid access token"; report those as the original 401 rather
-        // than as a permission problem. A genuine permission error keeps its 403.
-        if (fallbackError.code === 'unauthorized' || /invalid/i.test(fallbackError.message)) throw error
-      }
-      throw fallbackError
-    }
-    const accountList = Array.isArray(accounts) ? accounts : []
-    if (accountList.length === 0) throw error
-    return await summarize(options, accountList, 'account')
+  if (typeof options.accountId === 'string' && options.accountId !== '') {
+    const viaAccount = await tryAccountOwnedToken(options, options.accountId)
+    if (viaAccount !== undefined) return viaAccount
   }
 
-  if (verified?.status !== 'active') {
-    throw new CloudflareError('inactive', 'Token 当前状态不是 active，请重新创建')
+  try {
+    let verified
+    try {
+      verified = await callApi('/user/tokens/verify', options)
+    } catch (error) {
+      if (!(error instanceof CloudflareError) || error.code !== 'unauthorized') throw error
+      let accounts
+      try {
+        accounts = await callApi('/accounts?per_page=50', options)
+      } catch (fallbackError) {
+        if (fallbackError instanceof CloudflareError) {
+          // An invalid token answers 401 here too, but Cloudflare sometimes says
+          // 403 "Invalid access token"; report those as the original 401 rather
+          // than as a permission problem. A genuine permission error keeps its 403.
+          if (fallbackError.code === 'unauthorized' || /invalid/i.test(fallbackError.message)) throw error
+        }
+        throw fallbackError
+      }
+      const accountList = Array.isArray(accounts) ? accounts : []
+      if (accountList.length === 0) throw error
+      return await summarize(options, accountList, 'account')
+    }
+
+    if (verified?.status !== 'active') {
+      throw new CloudflareError('inactive', 'Token 当前状态不是 active，请重新创建')
+    }
+    const accounts = await callApi('/accounts?per_page=50', options)
+    return await summarize(options, Array.isArray(accounts) ? accounts : [], 'user')
+  } catch (error) {
+    if (error instanceof CloudflareError && error.code === 'unauthorized') {
+      throw new CloudflareError(
+        'unauthorized',
+        `${error.message}；若这是「帐户 API 令牌」，请填写 Account ID 后用账户级校验`,
+        { status: 401 },
+      )
+    }
+    throw error
   }
-  const accounts = await callApi('/accounts?per_page=50', options)
-  return await summarize(options, Array.isArray(accounts) ? accounts : [], 'user')
 }
