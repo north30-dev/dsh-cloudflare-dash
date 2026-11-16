@@ -68,6 +68,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 4. **客户端只能 `require('react')`**：不要 import `@deepseek-ai/*` 客户端包（会随版本变化、且不被支持）。Host 侧只依赖 Node 内置模块。
 5. **样式只使用 `--dsw-alias-*` 主题 token**，不写死颜色（深色主题下会看不见）；可见文案走 `src/client/locale.js` + `ctx.locale`。
 6. **面板自己负责滚动**：DSH 主面板给的是固定高度容器，页面根节点必须 `height:100%; overflow-y:auto`，否则滚轮无效、窗口变化不跟随。
+   滚动容器同时是**布局查询容器**（`container: cfd-page / inline-size`）：卡片列的响应式断点用 `@container` 而不是 `@media`，因为面板宽度 ≠ 窗口宽度（旁边还有侧边栏）。列表卡片最多 3 列，宽面板下不要退回 `auto-fit`——它会在 1600px+ 铺出 5 列，每列太窄且容易横向溢出。
 7. 路由是 exact 注册，绕过 DSH `/api` 栅栏，因此必须自己调 `connection.requestRejection`，缺失时退化为 loopback 校验，并拒绝 `sec-fetch-site: cross-site`。
 8. 不提交 `LICENSE`：MIT 由仓库维护者自己维护。
 

@@ -3,6 +3,10 @@
   width: 100%;
   height: 100%;
   overflow-y: auto;
+  /* Breakpoints below should follow the panel width, not the window width: the
+     panel sits beside the sidebar, so the two differ. Inline-size containment
+     only constrains the inline axis, leaving the page's own scrolling intact. */
+  container: cfd-page / inline-size;
   /* The main panel hands its page a fixed-height box: the page owns scrolling,
      and inheriting the box height is what makes it follow the window. */
   padding: 28px 28px 40px;
@@ -339,12 +343,40 @@
 
 .cfd-grid-2 {
   display: grid;
+  /* Fallback for browsers without container queries; the @container rules below
+     cap this at three columns. Plain auto-fit happily produced five columns in a
+     wide panel, which made every list too narrow to read. */
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
   margin: 12px 0;
   /* Stretch makes every card in a row share one height, so the four lists keep
      their bottoms aligned even when one has fewer rows. */
   align-items: stretch;
+}
+
+@container cfd-page (min-width: 680px) {
+  .cfd-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container cfd-page (min-width: 1120px) {
+  .cfd-grid-2 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Stacked cards: the page already scrolls, so an extra scrollbar inside each
+   card would nest two scroll areas for no benefit. */
+@container cfd-page (max-width: 679px) {
+  .cfd-grid-2 .cfd-card {
+    max-height: none;
+  }
+
+  .cfd-grid-2 .cfd-list {
+    overflow: visible;
+    padding-right: 0;
+  }
 }
 
 .cfd-grid-2 .cfd-card {
