@@ -342,11 +342,25 @@
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
   margin: 12px 0;
-  align-items: start;
+  /* Stretch makes every card in a row share one height, so the four lists keep
+     their bottoms aligned even when one has fewer rows. */
+  align-items: stretch;
 }
 
 .cfd-grid-2 .cfd-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
   margin-top: 0;
+}
+
+/* Only the rows scroll; the card head stays put. */
+.cfd-grid-2 .cfd-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
 }
 
 .cfd-list {

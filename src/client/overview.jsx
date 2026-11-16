@@ -244,7 +244,8 @@ function KpiCard({ label, value, delta, deltaLabel, hint }) {
  * @param {{ title: string, rows: Array<{ name: string, visits: number, pageLoads: number }>, t: (key: string) => string, directLabel?: string }} props
  */
 function ListCard({ title, rows, t, directLabel }) {
-  const visible = rows.slice(0, 5)
+  // The Host caps the query at 6 rows; the card scrolls instead of cropping.
+  const visible = rows
   const max = Math.max(1, ...visible.map((row) => row.pageLoads))
   return (
     <div className="cfd-card">
