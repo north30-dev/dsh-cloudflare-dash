@@ -88,7 +88,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 
 - Host 语法：`node --check src/host/*.js`
 - 客户端产物：构建后用 stub 加载验证注册（`window.__ModuleLoader__` 假实现 + `require('react')` 桩），确认 exports 为 `apply`/`inject`
-- 路由是否注册：未带浏览器 Cookie 请求 `/cloudflare-dash/api/v1/status|sites|overview` 应返回 **401**（栅栏生效）；返回 404 说明 Host 旧代码还在运行
+- 路由是否注册：用 `curl -i` 请求 `/cloudflare-dash/api/v1/status|sites|overview`，未带浏览器 Cookie 时应返回 **401** 且 body 是插件的 JSON；返回 404 说明 Host 旧代码还在运行。**不要用 PowerShell 的 `Invoke-WebRequest` 判断**——它对本站路由会误报 404（curl 同一时刻是 401）。
 - 真实数据验证：用本机凭据里的 Token 跑一次性 Node 脚本查询 `analytics.js` 的导出函数，**只打印结果，不打印 Token**
 - 视觉与交互无法自动化：让用户刷新页面后截图确认
 
