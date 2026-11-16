@@ -1,15 +1,17 @@
 # src
 
-预留的业务代码目录，目前不含实现。
+插件源码。Host 与 Client 两半，构建后由根 `index.js` 与 `dist/client.js` 加载。
 
 | 目录 | 职责 |
-| --- | --- |
-| `host/` | Host 侧代码：Cloudflare API 访问、凭据读取、Host 服务与工具注册 |
-| `client/` | 浏览器侧代码：看板 UI 组件、slot 注册与样式 |
-| `shared/` | 两端共享的常量、数据形状与工具函数 |
+|---|---|
+| `host/` | Host 侧：HTTP 路由、Cloudflare API 客户端、凭据存储、出网与代理 |
+| `client/` | 浏览器侧：侧边栏图标、主面板、样式与文案 |
+| `shared/` | 预留：两端共享的常量（当前两端无需共享代码） |
 
 约定：
 
-- 根目录 `index.js` / `client.js` 是稳定的入口，只负责激活与注册，具体逻辑放在本目录并在入口中以相对路径引入。
-- 浏览器侧代码必须能被 `client.js` 使用：要么内联进工厂，要么在打包配置就绪后再拆分为独立模块。
-- 新增文件后同步更新 `package.json` 的 `files`。
+- Host 侧是原生 ESM，Node 直接加载，改动无需构建。
+- 浏览器侧必须打包：`dist/client.js` 是单文件 bundle（loader 只接受一个自包含模块），改完执行 `pnpm run build`。
+- 浏览器侧只能 `require('react')`，不要引入其他 Harness 内部包（它们会随版本变化且不被支持）。
+- 样式只用 `--dsw-alias-*` 主题 token，文案走 `locale.js` + `ctx.locale`。
+- 新增运行期文件后同步更新 `package.json` 的 `files`。

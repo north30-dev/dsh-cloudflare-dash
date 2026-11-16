@@ -1,8 +1,8 @@
 /**
  * Host half of the Cloudflare dashboard bundle.
  *
- * The Host entry only activates the plugin row inserted by cordis.patch.yml.
- * Cloudflare API access, credentials, and any agent-facing tools belong in
- * `src/host/` once they are implemented.
+ * The plugin owns one exact HTTP surface under `/cloudflare-dash/api/v1` that
+ * the browser half calls with same-origin `fetch`. The Cloudflare Token never
+ * leaves the Host: the browser only receives configured state and a mask.
  */
-export function apply() {}
+export { apply } from './src/host/index.js'

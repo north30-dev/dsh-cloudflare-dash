@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Cloudflare 看板",
-    "description": "基于 Cloudflare 官方 API 的 DeepSeek Harness 看板插件。当前仅为项目脚手架，尚未实现看板功能。",
+    "description": "在侧边栏增加 Cloudflare 面板。可在界面内配置只读 API Token 并校验权限；Web Analytics 数据视图尚未实现。",
     "detail": "docs/DETAIL.md"
   }
 }

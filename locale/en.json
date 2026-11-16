@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Cloudflare dashboard",
-    "description": "Brings a Cloudflare dashboard into DeepSeek Harness on top of the official Cloudflare API. This is a project scaffold: no dashboard features are implemented yet.",
+    "description": "Adds a sidebar Cloudflare panel. Configure a read-only API token in the UI and verify access; Web Analytics views are not implemented yet.",
     "detail": "docs/DETAIL.md"
   }
 }
