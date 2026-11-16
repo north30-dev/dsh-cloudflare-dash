@@ -143,7 +143,7 @@ async function summarize(options, accountList, ownership) {
     ownership,
     capabilities: { rum: rumSites > 0, zone: accountList.length > 0, rumDenied },
     ...(rumSites === 0 && rumDenied
-      ? { hint: 'Token 缺少 Web Analytics 权限，或账号尚未启用 Web Analytics（站点列表不可读）' }
+      ? { hint: '读取站点列表需要 Account Settings:Read 权限' }
       : {}),
   }
 }

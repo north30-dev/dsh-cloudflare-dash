@@ -8,10 +8,9 @@ DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通�
 
 1. 在 Cloudflare 后台创建 **只读** API Token：<https://dash.cloudflare.com/profile/api-tokens>
    - 用 **Create Custom Token**（不要用「账户 API 令牌」，除非你知道自己在做什么，见下方说明）
-   - 权限（Cloudflare 里的英文名）：
-     - `Account Settings:Read`（列出账户）
-     - `Account Analytics:Read`（Web Analytics 数据）
-     - `Web Analytics:Read`（读取站点列表；没有这一项时站点统计会显示不可用）
+   - 权限（Cloudflare 后台里的英文名，**只有这两项，没有 Web Analytics 这个权限**）：
+     - `Account Settings:Read` —— 列出账户 + 读取 Web Analytics 站点列表（Cloudflare 官方文档中 `rum/site_info/list` 要求的权限就是它）
+     - `Account Analytics:Read` —— 读取分析数据（M2 起使用）
    - Account Resources 选你自己的账户即可；只勾 Read，不要给 Edit
 2. 安装插件：**Plugins → Add plugin** 选择本目录（或 `plugin_manager.install_bundle` 指定本目录绝对路径）。
 3. 刷新页面，点侧边栏的柱状图标 → 粘贴 Token → 「验证并保存」。
