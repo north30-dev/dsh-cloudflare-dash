@@ -118,7 +118,7 @@ pnpm run build                       # 生成 dist/client.js
 
 **不包含带宽/流量字节**：RUM 数据集没有该指标，官网 Web Analytics 的「Data served」无法等价复现，面板里也没有伪造。时间桶按 UTC 取回、按浏览器本地时区展示。
 
-**采样（重要）**：Cloudflare 对 RUM 数据集做 ABR 自适应采样。小流量站点只保留部分事件，再把计数按倍数外推，于是较长的范围反而可能给出**更少、更整**的行——实测同一站点 30d 返回 30 访问 / 2 个日期桶（全是 10 的整数倍），7d 却有 60 访问 / 6 个桶。所以**跨范围比大小没有意义**，也不是插件的 bug（官网看板同样如此；同一查询重复执行也可能有轻微差异，见[官方 FAQ](https://developers.cloudflare.com/analytics/faq/graphql-api-inconsistent-results/)）。该聚合节点只暴露 `count`/`sum`/`avg`/`confidence`，没有采样倍数字段，因此面板无法标注采样率；需要更准的数字就用较短的范围。
+**采样与 30 天窗口**：Cloudflare 对 RUM 聚合做 ABR 采样，**窗口越长分辨率越低**。一次 30 天的查询实测只回 2 天数据、数值全是 10 的倍数（7 天窗口却有完整 6 天），所以 30d 改为**按 7 天切片查询再合并**：总量、趋势、六类 Top 榜由切片相加（精确），Core Web Vitals 与加载性能的分位数不能相加，仍走整窗查询（可能是采样估计值）。这条规则只影响长窗口，24h / 7d 仍是一次查询。（[官方 sampling 说明](https://developers.cloudflare.com/analytics/graphql-api/sampling/)）
 
 **缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。
 

@@ -31,9 +31,12 @@ let siteCache = { key: '', at: 0, sites: [] }
 
 /** Supported time ranges and their aggregation step. */
 export const RANGES = {
-  '24h': { ms: 24 * 3600 * 1000, dimension: 'datetimeHour', orderBy: 'datetimeHour_ASC' },
-  '7d': { ms: 7 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC' },
-  '30d': { ms: 30 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC' },
+  '24h': { ms: 24 * 3600 * 1000, dimension: 'datetimeHour', orderBy: 'datetimeHour_ASC', chunkMs: 0 },
+  '7d': { ms: 7 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC', chunkMs: 0 },
+  // A month is fetched as weeks: Cloudflare's ABR sampling coarsens a 30-day
+  // aggregate to the point of returning a couple of days with counts rounded to
+  // tens, while the same days queried a week at a time come back exact.
+  '30d': { ms: 30 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC', chunkMs: 7 * 24 * 3600 * 1000 },
 }
 
 /**
@@ -146,21 +149,27 @@ function performanceOf(row) {
 }
 
 /**
- * Build the fixed dashboard document for one range.
+ * Build the grouped-rows document for one slice of the window: the trend series,
+ * the six dimension lists, and that slice's own totals.
+ *
+ * Slices exist because Cloudflare lowers the resolution of these aggregates as
+ * the requested window grows (ABR sampling). A 30-day request came back with two
+ * of the six days that held traffic and counts rounded to tens, while the same
+ * week queried alone came back complete; the Cloudflare docs recommend weekly
+ * ranges over monthly ones for exactly this reason.
+ *
  * Values are validated (hex tags, ISO instants) before interpolation, so the
  * document never carries caller-controlled text.
- * @param {{ accountTag: string, siteTag: string, from: string, to: string, previousFrom: string, previousTo: string, dimension: string, orderBy: string }} input
+ * @param {{ accountTag: string, siteTag: string, from: string, to: string, dimension: string, orderBy: string }} input
  * @returns {string}
  */
-function buildQuery(input) {
+function buildSliceQuery(input) {
   const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
-  const previous = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.previousFrom}", datetime_leq: "${input.previousTo}", bot: 0 }`
   const top = (alias, dimension) =>
     `${alias}: rumPageloadEventsAdaptiveGroups(limit: ${TOP_LIMIT}, orderBy: [count_DESC], ${current}) { count sum { visits } dimensions { ${dimension} } }`
   return `query {
   viewer { accounts(filter: { accountTag: "${input.accountTag}" }) {
     totals: rumPageloadEventsAdaptiveGroups(limit: 1, ${current}) { count sum { visits } }
-    previous: rumPageloadEventsAdaptiveGroups(limit: 1, ${previous}) { count sum { visits } }
     series: rumPageloadEventsAdaptiveGroups(limit: 400, orderBy: [${input.orderBy}], ${current}) { count sum { visits } dimensions { ${input.dimension} } }
     ${top('paths', 'requestPath')}
     ${top('referrers', 'refererHost')}
@@ -168,6 +177,23 @@ function buildQuery(input) {
     ${top('browsers', 'userAgentBrowser')}
     ${top('devices', 'deviceType')}
     ${top('os', 'userAgentOS')}
+  } }
+}`
+}
+
+/**
+ * Build the document for the rows that cannot be summed across slices: the
+ * previous window's totals, and the two quantile datasets (a P75 does not add
+ * up). They stay whole-window, so their numbers may be a sampled estimate.
+ * @param {{ accountTag: string, siteTag: string, from: string, to: string, previousFrom: string, previousTo: string }} input
+ * @returns {string}
+ */
+function buildSummaryQuery(input) {
+  const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
+  const previous = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.previousFrom}", datetime_leq: "${input.previousTo}", bot: 0 }`
+  return `query {
+  viewer { accounts(filter: { accountTag: "${input.accountTag}" }) {
+    previous: rumPageloadEventsAdaptiveGroups(limit: 1, ${previous}) { count sum { visits } }
     performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${current}) {
       count
       quantiles { pageLoadTimeP75 dnsTimeP75 connectionTimeP75 tlsTimeP75 requestTimeP75 responseTimeP75 pageRenderTimeP75 firstPaintP75 firstContentfulPaintP75 }
@@ -179,6 +205,57 @@ function buildQuery(input) {
     }
   } }
 }`
+}
+
+/**
+ * Cut a window into disjoint slices, newest first. Short ranges stay one slice,
+ * so their result is byte-for-byte the query the dashboard always made.
+ * @param {number} fromMs
+ * @param {number} toMs
+ * @param {number} chunkMs
+ * @returns {Array<{ from: Date, to: Date }>}
+ */
+function sliceWindow(fromMs, toMs, chunkMs) {
+  const slices = []
+  let end = toMs
+  while (end > fromMs) {
+    const begin = Math.max(end - chunkMs, fromMs)
+    slices.push({ from: new Date(begin), to: new Date(end) })
+    end = begin
+  }
+  return slices
+}
+
+/**
+ * Fold per-slice top lists into one ranking. Each slice contributes only its own
+ * rows, so a name that stays below the cut in every slice can miss the merged
+ * list; the panel wants a short list, and the alternative — unbounded group
+ * sizes — is what makes Cloudflare lower the resolution in the first place.
+ * @param {any[]} accounts
+ * @param {string} alias
+ * @param {string} dimension
+ * @param {boolean} keepBlank whether a blank dimension value is a real row (direct referrers)
+ * @returns {Array<{ name: string, visits: number, pageLoads: number }>}
+ */
+function mergeTop(accounts, alias, dimension, keepBlank) {
+  const merged = new Map()
+  for (const account of accounts) {
+    const rows = Array.isArray(account?.[alias]) ? account[alias] : []
+    for (const row of rows) {
+      const entry = rowOf(row, dimension)
+      if (entry.name === '' && keepBlank !== true) continue
+      const current = merged.get(entry.name)
+      if (current === undefined) {
+        merged.set(entry.name, entry)
+      } else {
+        current.visits += entry.visits
+        current.pageLoads += entry.pageLoads
+      }
+    }
+  }
+  return [...merged.values()]
+    .sort((left, right) => right.pageLoads - left.pageLoads)
+    .slice(0, TOP_LIMIT)
 }
 
 /**
@@ -213,48 +290,74 @@ export async function fetchOverview(options) {
   const to = new Date(now)
   const iso = (value) => value.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  // RUM aggregates are ABR-sampled by Cloudflare, and this node type exposes no
-  // sampling multiplier (only count/sum/avg/confidence), so the payload cannot
-  // report a sampling interval. A longer range may therefore return fewer,
-  // rounder rows than a shorter one; the README explains why.
-  const query = buildQuery({
-    accountTag: options.accountId,
-    siteTag: site.siteTag,
-    from: iso(from),
-    to: iso(to),
-    previousFrom: iso(new Date(now - spec.ms * 2)),
-    previousTo: iso(from),
-    dimension: spec.dimension,
-    orderBy: spec.orderBy,
-  })
+  const slices = sliceWindow(from.getTime(), to.getTime(), spec.chunkMs ?? spec.ms)
+  const window = { from: iso(from), to: iso(to) }
+  const filter = { accountTag: options.accountId, siteTag: site.siteTag }
+  const transport = { token: options.token, proxy: options.proxy }
 
-  const data = await graphql(query, { token: options.token, proxy: options.proxy })
-  const account = data?.viewer?.accounts?.[0] ?? {}
-  const totalsRow = account.totals?.[0]
-  const previousRow = account.previous?.[0]
-  const series = Array.isArray(account.series) ? account.series : []
+  // The summary and every slice go out together: a 30d view is six requests
+  // instead of one, which is what buys back the days Cloudflare's sampling drops.
+  const [summary, ...parts] = await Promise.all([
+    graphql(buildSummaryQuery({
+      ...filter,
+      ...window,
+      previousFrom: iso(new Date(now - spec.ms * 2)),
+      previousTo: iso(from),
+    }), transport),
+    ...slices.map((slice) => graphql(buildSliceQuery({
+      ...filter,
+      from: iso(slice.from),
+      to: iso(slice.to),
+      dimension: spec.dimension,
+      orderBy: spec.orderBy,
+    }), transport)),
+  ])
+
+  const accounts = parts.map((part) => part?.viewer?.accounts?.[0] ?? {})
+  const summaryAccount = summary?.viewer?.accounts?.[0] ?? {}
+
+  // Totals come from the slices, not from a whole-window aggregate: on a sampled
+  // window that aggregate is an estimate that can disagree with the very series
+  // drawn underneath it.
+  const totals = { visits: 0, pageLoads: 0 }
+  const seriesByBucket = new Map()
+  for (const account of accounts) {
+    totals.visits += num(account.totals?.[0]?.sum?.visits)
+    totals.pageLoads += num(account.totals?.[0]?.count)
+    for (const row of Array.isArray(account.series) ? account.series : []) {
+      const key = row?.dimensions?.[spec.dimension]
+      if (typeof key !== 'string' || key === '') continue
+      const bucket = seriesByBucket.get(key) ?? { t: key, visits: 0, pageLoads: 0 }
+      // Slices share their boundary instant, so a bucket cut by one slice
+      // continues in the next; adding the parts restores the whole bucket.
+      bucket.visits += num(row?.sum?.visits)
+      bucket.pageLoads += num(row?.count)
+      seriesByBucket.set(key, bucket)
+    }
+  }
+  const series = [...seriesByBucket.values()].sort((left, right) => (left.t < right.t ? -1 : left.t > right.t ? 1 : 0))
+  const previousRow = summaryAccount.previous?.[0]
 
   const payload = {
     site: { siteTag: site.siteTag, host: site.host, enabled: site.enabled },
     range: options.range,
-    window: { from: iso(from), to: iso(to) },
-    totals: { visits: num(totalsRow?.sum?.visits), pageLoads: num(totalsRow?.count) },
+    window,
+    slices: slices.length,
+    totals,
     previous: { visits: num(previousRow?.sum?.visits), pageLoads: num(previousRow?.count) },
-    series: series.map((row) => ({
-      t: typeof row?.dimensions?.[spec.dimension] === 'string' ? row.dimensions[spec.dimension] : '',
-      visits: num(row?.sum?.visits),
-      pageLoads: num(row?.count),
-    })).filter((point) => point.t !== ''),
+    series,
     top: {
-      paths: (account.paths ?? []).map((row) => rowOf(row, 'requestPath')).filter((row) => row.name !== ''),
-      referrers: (account.referrers ?? []).map((row) => rowOf(row, 'refererHost')),
-      countries: (account.countries ?? []).map((row) => rowOf(row, 'countryName')).filter((row) => row.name !== ''),
-      browsers: (account.browsers ?? []).map((row) => rowOf(row, 'userAgentBrowser')).filter((row) => row.name !== ''),
-      devices: (account.devices ?? []).map((row) => rowOf(row, 'deviceType')).filter((row) => row.name !== ''),
-      os: (account.os ?? []).map((row) => rowOf(row, 'userAgentOS')).filter((row) => row.name !== ''),
+      paths: mergeTop(accounts, 'paths', 'requestPath', false),
+      referrers: mergeTop(accounts, 'referrers', 'refererHost', true),
+      countries: mergeTop(accounts, 'countries', 'countryName', false),
+      browsers: mergeTop(accounts, 'browsers', 'userAgentBrowser', false),
+      devices: mergeTop(accounts, 'devices', 'deviceType', false),
+      os: mergeTop(accounts, 'os', 'userAgentOS', false),
     },
-    vitals: vitalsOf(account.vitals?.[0]),
-    performance: performanceOf(account.performance?.[0]),
+    // Quantiles do not add up across slices, so these stay whole-window: they
+    // can be a sampled estimate, but a P75 is still a P75.
+    vitals: vitalsOf(summaryAccount.vitals?.[0]),
+    performance: performanceOf(summaryAccount.performance?.[0]),
     generatedAt: Date.now(),
   }
 

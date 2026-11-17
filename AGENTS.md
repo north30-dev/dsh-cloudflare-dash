@@ -86,7 +86,8 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - **Core Web Vitals 与加载性能的时长单位都是微秒**（`1212000` → 1.212 s），展示前除以 1000；CLS 是无量纲比值。
 - 查询统一带 `bot: 0`，与官网口径对齐；时间桶按 UTC 取回，前端按本地时区格式化。
 - RUM **没有带宽/字节指标**，「Data served」无法复现，禁止编造。
-- RUM 聚合是 **ABR 采样**：小流量站点的 30d 结果可能比 7d 更小、数值全是 10 的整数倍、日期桶更少（Cloudflare 只取部分事件再 ×N 外推）。这不是本插件的 bug，跨范围比较大小无意义。节点 `AccountRumPageloadEventsAdaptiveGroups` 只暴露 `avg` / `confidence` / `count` / `dimensions` / `sum`——**没有 `sampleInterval` 字段**（introspection 实测，请求它返回 `unknown field`），别再试着靠这个字段标注采样率。
+- RUM 聚合是 **ABR 采样**，而且**窗口越长分辨率越低**：一次 30 天查询实测只回 2 天、数值全是 10 的倍数，同一批日期按 7 天查就完整。所以 30d 用 `RANGES['30d'].chunkMs` **按周切片**，切片并发查询后：总量/趋势/Top 榜相加合并（精确），**分位数（CWV、加载性能）不可相加**，仍走整窗 summary 查询（可能是采样估计）。加长范围时沿用这个模式，不要单发一个长窗口聚合。
+- 节点 `AccountRumPageloadEventsAdaptiveGroups` 只暴露 `avg` / `confidence` / `count` / `dimensions` / `sum`——**没有 `sampleInterval` 字段**（introspection 实测，请求它返回 `unknown field`），别再试着靠它标注采样率。
 - 概览结果在 Host 内存里按 `账户:站点:范围` 缓存（24h 60s / 7d 120s / 30d 300s）；手动刷新传 `fresh=1` 绕过缓存，Token 变更时清空缓存。
 - `ctx.tools.register(definition, { when })` 的硬性要求：`definition` 必须带 `output: { schema, render(args, value) => ContentBlock[] }`（文本块形状是 `{ type: 'text', text }`），缺 `render` 会直接抛 `TypeError`；`run_code` 是保留工具名。`when` 每个模型步求值一次，可返回 Promise，返回 false 表示该步不向模型暴露这个工具。
 - 工具定义不能只靠注册时的条件做安全边界：`execute` 里仍要自己校验参数（手写注册没有 `defineTool` 的入参校验）。

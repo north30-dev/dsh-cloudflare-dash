@@ -15,17 +15,37 @@ function niceMax(value) {
   if (value <= 0) return 1
   const magnitude = 10 ** Math.floor(Math.log10(value))
   const normalized = value / magnitude
-  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  // Includes 3 and 4 so a peak of 30 keeps a 30 ceiling instead of doubling the
+  // empty space above the line by rounding up to 50.
+  const step = normalized <= 1 ? 1
+    : normalized <= 1.5 ? 1.5
+      : normalized <= 2 ? 2
+        : normalized <= 2.5 ? 2.5
+          : normalized <= 3 ? 3
+            : normalized <= 4 ? 4
+              : normalized <= 5 ? 5
+                : 10
   return step * magnitude
 }
 
 /**
+ * Milliseconds for one bucket stamp, or NaN when it cannot be placed in time.
+ * @param {unknown} stamp
+ * @returns {number}
+ */
+function stampToMs(stamp) {
+  if (typeof stamp !== 'string' || stamp === '') return Number.NaN
+  return Date.parse(stamp)
+}
+
+/**
  * @param {{
- *   points: Array<{ label: string, visits: number, pageLoads: number }>,
+ *   points: Array<{ t: string, label: string, visits: number, pageLoads: number }>,
+ *   window?: { from?: string, to?: string },
  *   labels: { visits: string, pageLoads: string, empty: string },
  * }} props
  */
-export function TrendChart({ points, labels }) {
+export function TrendChart({ points, window: span, labels }) {
   const [hover, setHover] = useState(-1)
   const innerWidth = WIDTH - PAD.left - PAD.right
   const innerHeight = HEIGHT - PAD.top - PAD.bottom
@@ -36,11 +56,26 @@ export function TrendChart({ points, labels }) {
 
   const peak = Math.max(1, ...points.map((point) => Math.max(point.visits, point.pageLoads)))
   const max = niceMax(peak)
+
+  // Cloudflare returns only the buckets that hold data, so a 24h window can come
+  // back with three hours and a 30d window with two days. Spacing those points by
+  // index would draw an even ramp across the whole axis and claim traffic that
+  // never happened; placing them at their real timestamps keeps the gaps visible.
+  const fromMs = stampToMs(span?.from)
+  const toMs = stampToMs(span?.to)
+  const times = points.map((point) => stampToMs(point.t))
+  const byTime = Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs
+    && times.every((value) => Number.isFinite(value))
+
   /**
    * @param {number} index
    * @returns {number}
    */
   const xOf = (index) => {
+    if (byTime) {
+      const ratio = Math.min(1, Math.max(0, (times[index] - fromMs) / (toMs - fromMs)))
+      return PAD.left + ratio * innerWidth
+    }
     if (points.length === 1) return PAD.left + innerWidth / 2
     return PAD.left + (index / (points.length - 1)) * innerWidth
   }
@@ -56,6 +91,10 @@ export function TrendChart({ points, labels }) {
 
   const gridValues = [0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(max * fraction))
   const active = hover >= 0 && hover < points.length ? points[hover] : null
+  // Isolated buckets need a marker: without one a single day at the far right is
+  // just a line ending in the void.
+  const showDots = points.length <= 14
+  const slot = Math.max(innerWidth / Math.max(points.length, 1), 8)
 
   return (
     <div className="cfd-chart">
@@ -94,6 +133,12 @@ export function TrendChart({ points, labels }) {
           <path d={visitsArea} fill="url(#cfd-area)" />
           <path d={visitsLine} className="cfd-line cfd-line--area" />
           <path d={loadsLine} className="cfd-line cfd-line--loads" />
+          {showDots ? points.map((point, index) => (
+            <g key={`dot-${point.label}`}>
+              <circle cx={xOf(index)} cy={yOf(point.visits)} r="3" className="cfd-dot cfd-dot--visits" />
+              <circle cx={xOf(index)} cy={yOf(point.pageLoads)} r="3" className="cfd-dot cfd-dot--loads" />
+            </g>
+          )) : null}
           {active === null ? null : (
             <g>
               <line
@@ -110,9 +155,9 @@ export function TrendChart({ points, labels }) {
           {points.map((point, index) => (
             <rect
               key={point.label}
-              x={xOf(index) - innerWidth / Math.max(points.length, 1) / 2}
+              x={xOf(index) - slot / 2}
               y={PAD.top}
-              width={Math.max(innerWidth / Math.max(points.length, 1), 8)}
+              width={slot}
               height={innerHeight}
               fill="transparent"
               onMouseEnter={() => setHover(index)}
@@ -120,7 +165,9 @@ export function TrendChart({ points, labels }) {
             />
           ))}
           {points.map((point, index) => {
-            const showLabel = points.length <= 12
+            // Labels sit at their true positions, so a short series can crowd:
+            // keep every label only while there are few points.
+            const showLabel = points.length <= 8
               || index === 0
               || index === points.length - 1
               || index === Math.floor(points.length / 2)

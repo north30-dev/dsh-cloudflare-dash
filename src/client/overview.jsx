@@ -77,6 +77,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
     if (data === null) return []
     const step = data.range === '24h' ? 'hour' : 'day'
     return data.series.map((point) => ({
+      t: point.t,
       label: fmtBucket(point.t, step, false),
       visits: point.visits,
       pageLoads: point.pageLoads,
@@ -191,6 +192,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
         </div>
         <TrendChart
           points={points}
+          window={data?.window}
           labels={{ visits: t('chart.visits'), pageLoads: t('chart.pageLoads'), empty: t('chart.empty') }}
         />
       </section>

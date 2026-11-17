@@ -161,10 +161,14 @@ function niceMax(value) {
   if (value <= 0) return 1;
   const magnitude = 10 ** Math.floor(Math.log10(value));
   const normalized = value / magnitude;
-  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = normalized <= 1 ? 1 : normalized <= 1.5 ? 1.5 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 3 ? 3 : normalized <= 4 ? 4 : normalized <= 5 ? 5 : 10;
   return step * magnitude;
 }
-function TrendChart({ points, labels }) {
+function stampToMs(stamp) {
+  if (typeof stamp !== "string" || stamp === "") return Number.NaN;
+  return Date.parse(stamp);
+}
+function TrendChart({ points, window: span, labels }) {
   const [hover, setHover] = (0, import_react.useState)(-1);
   const innerWidth = WIDTH - PAD.left - PAD.right;
   const innerHeight = HEIGHT - PAD.top - PAD.bottom;
@@ -173,7 +177,15 @@ function TrendChart({ points, labels }) {
   }
   const peak = Math.max(1, ...points.map((point) => Math.max(point.visits, point.pageLoads)));
   const max = niceMax(peak);
+  const fromMs = stampToMs(span?.from);
+  const toMs = stampToMs(span?.to);
+  const times = points.map((point) => stampToMs(point.t));
+  const byTime = Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs && times.every((value) => Number.isFinite(value));
   const xOf = (index) => {
+    if (byTime) {
+      const ratio = Math.min(1, Math.max(0, (times[index] - fromMs) / (toMs - fromMs)));
+      return PAD.left + ratio * innerWidth;
+    }
     if (points.length === 1) return PAD.left + innerWidth / 2;
     return PAD.left + index / (points.length - 1) * innerWidth;
   };
@@ -183,6 +195,8 @@ function TrendChart({ points, labels }) {
   const loadsLine = points.map((point, index) => `${index === 0 ? "M" : "L"}${xOf(index)},${yOf(point.pageLoads)}`).join(" ");
   const gridValues = [0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(max * fraction));
   const active = hover >= 0 && hover < points.length ? points[hover] : null;
+  const showDots = points.length <= 14;
+  const slot = Math.max(innerWidth / Math.max(points.length, 1), 8);
   return /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-chart" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-legend" }, /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-legend-item" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--area" }), labels.visits), /* @__PURE__ */ import_react.default.createElement("span", { className: "cfd-legend-item" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--line" }), labels.pageLoads)), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-chart-plot" }, /* @__PURE__ */ import_react.default.createElement("svg", { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, className: "cfd-chart-svg", role: "img" }, /* @__PURE__ */ import_react.default.createElement("defs", null, /* @__PURE__ */ import_react.default.createElement("linearGradient", { id: "cfd-area", x1: "0", y1: "0", x2: "0", y2: "1" }, /* @__PURE__ */ import_react.default.createElement("stop", { offset: "0%", stopColor: "var(--dsw-alias-brand-primary)", stopOpacity: "0.28" }), /* @__PURE__ */ import_react.default.createElement("stop", { offset: "100%", stopColor: "var(--dsw-alias-brand-primary)", stopOpacity: "0.02" }))), gridValues.map((value) => /* @__PURE__ */ import_react.default.createElement("g", { key: value }, /* @__PURE__ */ import_react.default.createElement(
     "line",
     {
@@ -192,7 +206,7 @@ function TrendChart({ points, labels }) {
       y2: yOf(value),
       className: "cfd-grid-line"
     }
-  ), /* @__PURE__ */ import_react.default.createElement("text", { x: PAD.left - 8, y: yOf(value) + 4, className: "cfd-axis-label", textAnchor: "end" }, fmtCompact(value)))), /* @__PURE__ */ import_react.default.createElement("path", { d: visitsArea, fill: "url(#cfd-area)" }), /* @__PURE__ */ import_react.default.createElement("path", { d: visitsLine, className: "cfd-line cfd-line--area" }), /* @__PURE__ */ import_react.default.createElement("path", { d: loadsLine, className: "cfd-line cfd-line--loads" }), active === null ? null : /* @__PURE__ */ import_react.default.createElement("g", null, /* @__PURE__ */ import_react.default.createElement(
+  ), /* @__PURE__ */ import_react.default.createElement("text", { x: PAD.left - 8, y: yOf(value) + 4, className: "cfd-axis-label", textAnchor: "end" }, fmtCompact(value)))), /* @__PURE__ */ import_react.default.createElement("path", { d: visitsArea, fill: "url(#cfd-area)" }), /* @__PURE__ */ import_react.default.createElement("path", { d: visitsLine, className: "cfd-line cfd-line--area" }), /* @__PURE__ */ import_react.default.createElement("path", { d: loadsLine, className: "cfd-line cfd-line--loads" }), showDots ? points.map((point, index) => /* @__PURE__ */ import_react.default.createElement("g", { key: `dot-${point.label}` }, /* @__PURE__ */ import_react.default.createElement("circle", { cx: xOf(index), cy: yOf(point.visits), r: "3", className: "cfd-dot cfd-dot--visits" }), /* @__PURE__ */ import_react.default.createElement("circle", { cx: xOf(index), cy: yOf(point.pageLoads), r: "3", className: "cfd-dot cfd-dot--loads" }))) : null, active === null ? null : /* @__PURE__ */ import_react.default.createElement("g", null, /* @__PURE__ */ import_react.default.createElement(
     "line",
     {
       x1: xOf(hover),
@@ -205,16 +219,16 @@ function TrendChart({ points, labels }) {
     "rect",
     {
       key: point.label,
-      x: xOf(index) - innerWidth / Math.max(points.length, 1) / 2,
+      x: xOf(index) - slot / 2,
       y: PAD.top,
-      width: Math.max(innerWidth / Math.max(points.length, 1), 8),
+      width: slot,
       height: innerHeight,
       fill: "transparent",
       onMouseEnter: () => setHover(index),
       onMouseLeave: () => setHover(-1)
     }
   )), points.map((point, index) => {
-    const showLabel = points.length <= 12 || index === 0 || index === points.length - 1 || index === Math.floor(points.length / 2);
+    const showLabel = points.length <= 8 || index === 0 || index === points.length - 1 || index === Math.floor(points.length / 2);
     if (!showLabel) return null;
     return /* @__PURE__ */ import_react.default.createElement("text", { key: `x-${point.label}`, x: xOf(index), y: HEIGHT - 8, className: "cfd-axis-label", textAnchor: "middle" }, point.label);
   })), active === null ? null : /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip", style: { left: `${xOf(hover) / WIDTH * 100}%` } }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-title" }, active.label), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-row" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--area" }), labels.visits, /* @__PURE__ */ import_react.default.createElement("b", null, fmtInt(active.visits))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-row" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--line" }), labels.pageLoads, /* @__PURE__ */ import_react.default.createElement("b", null, fmtInt(active.pageLoads))))));
@@ -278,6 +292,7 @@ function Overview({ t, proxy, onOpenSettings }) {
     if (data === null) return [];
     const step = data.range === "24h" ? "hour" : "day";
     return data.series.map((point) => ({
+      t: point.t,
       label: fmtBucket(point.t, step, false),
       visits: point.visits,
       pageLoads: point.pageLoads
@@ -340,6 +355,7 @@ function Overview({ t, proxy, onOpenSettings }) {
     TrendChart,
     {
       points,
+      window: data?.window,
       labels: { visits: t("chart.visits"), pageLoads: t("chart.pageLoads"), empty: t("chart.empty") }
     }
   )), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-grid-2" }, /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.paths"), rows: top.paths, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.referrers"), rows: top.referrers, t, directLabel: t("list.direct") }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.countries"), rows: top.countries, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.browsers"), rows: top.browsers, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.devices"), rows: top.devices, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.os"), rows: top.os, t })), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("vitals.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("vitals.sub"))), vitals === null ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-hint" }, t("vitals.empty")) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vitals" }, /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "LCP", value: fmtDuration(vitals.lcp.p75), metric: vitals.lcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "INP", value: fmtDuration(vitals.inp.p75), metric: vitals.inp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "CLS", value: fmtRatio(vitals.cls.p75), metric: vitals.cls, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "FCP", value: fmtDuration(vitals.fcp.p75), metric: vitals.fcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "TTFB", value: fmtDuration(vitals.ttfb.p75), metric: vitals.ttfb, t })), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-foot" }, t("vitals.note"))), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("perf.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("perf.sub"))), /* @__PURE__ */ import_react2.default.createElement(PerformanceCard, { performance: data?.performance ?? null, t })), /* @__PURE__ */ import_react2.default.createElement("footer", { className: "cfd-foot" }, t("overview.footer"), data === null ? "" : ` \xB7 ${new Date(data.generatedAt).toLocaleTimeString()}`, data?.cached === true ? ` \xB7 ${t("overview.cached")}` : ""));
