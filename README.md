@@ -1,5 +1,8 @@
 # Cloudflare 看板插件（dsh-cloudflare-dash）
 
+[![CI](https://github.com/north30-dev/dsh-cloudflare-dash/actions/workflows/ci.yml/badge.svg)](https://github.com/north30-dev/dsh-cloudflare-dash/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通过 Cloudflare 官方 API 展示 Web Analytics 数据。
 
 > 非 Cloudflare 官方产品。Cloudflare 是 Cloudflare, Inc. 的商标，本项目与 Cloudflare 不存在隶属或背书关系。
