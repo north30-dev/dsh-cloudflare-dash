@@ -618,6 +618,16 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Explains a narrowed x-axis: the chart spans the data, which may be shorter
+   than the requested range. */
+.cfd-chart-note {
+  margin: 6px 0 0;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .cfd-empty-card {
   margin-top: 40px;
   padding: 32px;

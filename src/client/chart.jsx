@@ -1,6 +1,6 @@
 /** A dependency-free area chart for the dashboard's trend card. */
 import React, { useState } from 'react'
-import { fmtCompact, fmtInt } from './format.js'
+import { fmtBucket, fmtCompact, fmtInt } from './format.js'
 
 const WIDTH = 760
 const HEIGHT = 240
@@ -42,10 +42,12 @@ function stampToMs(stamp) {
  * @param {{
  *   points: Array<{ t: string, label: string, visits: number, pageLoads: number }>,
  *   window?: { from?: string, to?: string },
+ *   step: 'hour' | 'day',
+ *   note?: string | null,
  *   labels: { visits: string, pageLoads: string, empty: string },
  * }} props
  */
-export function TrendChart({ points, window: span, labels }) {
+export function TrendChart({ points, step = 'day', note, labels }) {
   const [hover, setHover] = useState(-1)
   const innerWidth = WIDTH - PAD.left - PAD.right
   const innerHeight = HEIGHT - PAD.top - PAD.bottom
@@ -58,14 +60,29 @@ export function TrendChart({ points, window: span, labels }) {
   const max = niceMax(peak)
 
   // Cloudflare returns only the buckets that hold data, so a 24h window can come
-  // back with three hours and a 30d window with two days. Spacing those points by
-  // index would draw an even ramp across the whole axis and claim traffic that
-  // never happened; placing them at their real timestamps keeps the gaps visible.
-  const fromMs = stampToMs(span?.from)
-  const toMs = stampToMs(span?.to)
+  // back with three hours and a 30d window with six days. Two rules keep that
+  // honest and readable:
+  //   1. Points sit at their real timestamps, never evenly spaced by index — an
+  //      index-fit ramp would claim traffic on days that had none.
+  //   2. The axis spans the data, not the requested window. A new site with six
+  //      days inside a 30-day request would otherwise squash every point into the
+  //      last fifth of the card. `note` tells the reader the axis was narrowed.
+  const stepMs = step === 'hour' ? 3_600_000 : 86_400_000
   const times = points.map((point) => stampToMs(point.t))
-  const byTime = Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs
-    && times.every((value) => Number.isFinite(value))
+  const byTime = times.every((value) => Number.isFinite(value))
+
+  let domainFrom = 0
+  let domainTo = 0
+  if (byTime) {
+    domainFrom = times[0]
+    domainTo = times[times.length - 1]
+    if (!(domainTo > domainFrom)) {
+      // One bucket (or several sharing an instant): give it a whole slot to sit
+      // in so a single dot does not become a line with no length.
+      domainFrom -= stepMs / 2
+      domainTo += stepMs / 2
+    }
+  }
 
   /**
    * @param {number} index
@@ -73,8 +90,8 @@ export function TrendChart({ points, window: span, labels }) {
    */
   const xOf = (index) => {
     if (byTime) {
-      const ratio = Math.min(1, Math.max(0, (times[index] - fromMs) / (toMs - fromMs)))
-      return PAD.left + ratio * innerWidth
+      const ratio = (times[index] - domainFrom) / (domainTo - domainFrom)
+      return PAD.left + Math.min(1, Math.max(0, ratio)) * innerWidth
     }
     if (points.length === 1) return PAD.left + innerWidth / 2
     return PAD.left + (index / (points.length - 1)) * innerWidth
@@ -91,10 +108,30 @@ export function TrendChart({ points, window: span, labels }) {
 
   const gridValues = [0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(max * fraction))
   const active = hover >= 0 && hover < points.length ? points[hover] : null
-  // Isolated buckets need a marker: without one a single day at the far right is
-  // just a line ending in the void.
+  // Isolated buckets need a marker: without one a single day is just a dot with
+  // no line, and a two-point series can look like a rendering accident.
   const showDots = points.length <= 14
   const slot = Math.max(innerWidth / Math.max(points.length, 1), 8)
+
+  // Time ticks instead of per-bucket labels: labels sat on the buckets, so six
+  // adjacent days printed as "11-111-121-13…".
+  const ticks = []
+  if (byTime) {
+    const count = 5
+    const span = domainTo - domainFrom
+    for (let index = 0; index < count; index += 1) {
+      const at = domainFrom + (span * index) / (count - 1)
+      const iso = step === 'hour' ? new Date(at).toISOString() : new Date(at).toISOString().slice(0, 10)
+      const label = fmtBucket(iso, step, false)
+      if (label !== '' && !ticks.some((tick) => tick.label === label)) {
+        ticks.push({ at, label })
+      }
+    }
+  }
+  const tickX = (at, index) => {
+    if (!byTime) return index === 0 ? PAD.left : index === ticks.length - 1 ? WIDTH - PAD.right : PAD.left + (index / (ticks.length - 1)) * innerWidth
+    return PAD.left + Math.min(1, Math.max(0, (at - domainFrom) / (domainTo - domainFrom))) * innerWidth
+  }
 
   return (
     <div className="cfd-chart">
@@ -164,20 +201,17 @@ export function TrendChart({ points, window: span, labels }) {
               onMouseLeave={() => setHover(-1)}
             />
           ))}
-          {points.map((point, index) => {
-            // Labels sit at their true positions, so a short series can crowd:
-            // keep every label only while there are few points.
-            const showLabel = points.length <= 8
-              || index === 0
-              || index === points.length - 1
-              || index === Math.floor(points.length / 2)
-            if (!showLabel) return null
-            return (
-              <text key={`x-${point.label}`} x={xOf(index)} y={HEIGHT - 8} className="cfd-axis-label" textAnchor="middle">
-                {point.label}
-              </text>
-            )
-          })}
+          {ticks.map((tick, index) => (
+            <text
+              key={`x-${tick.label}`}
+              x={tickX(tick.at, index)}
+              y={HEIGHT - 8}
+              className="cfd-axis-label"
+              textAnchor={index === 0 ? 'start' : index === ticks.length - 1 ? 'end' : 'middle'}
+            >
+              {tick.label}
+            </text>
+          ))}
         </svg>
         {active === null ? null : (
           <div className="cfd-tooltip" style={{ left: `${(xOf(hover) / WIDTH) * 100}%` }}>
@@ -195,6 +229,7 @@ export function TrendChart({ points, window: span, labels }) {
           </div>
         )}
       </div>
+      {typeof note === 'string' && note !== '' ? <p className="cfd-chart-note">{note}</p> : null}
     </div>
   )
 }

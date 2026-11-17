@@ -84,6 +84,23 @@ export function Overview({ t, proxy, onOpenSettings }) {
     }))
   }, [data])
 
+  const step = data?.range === '24h' ? 'hour' : 'day'
+
+  // The chart zooms to the data, so say so when the data covers only part of the
+  // requested range — otherwise a 30d view of a six-day-old site looks like the
+  // range selector is broken.
+  const spanNote = useMemo(() => {
+    if (data === null || data.series.length < 2) return null
+    const first = Date.parse(data.series[0].t)
+    const last = Date.parse(data.series[data.series.length - 1].t)
+    const from = Date.parse(data.window?.from ?? '')
+    const to = Date.parse(data.window?.to ?? '')
+    if (![first, last, from, to].every((value) => Number.isFinite(value))) return null
+    if (!(to > from) || !(last > first)) return null
+    if (last - first >= (to - from) * 0.6) return null
+    return `${t('chart.partial')} ${fmtBucket(data.series[0].t, step, false)} → ${fmtBucket(data.series[data.series.length - 1].t, step, false)}`
+  }, [data, step, t])
+
   const site = data?.site ?? sites.find((entry) => entry.siteTag === siteTag)
   const currentSite = site?.siteTag === siteTag ? site : undefined
 
@@ -192,7 +209,8 @@ export function Overview({ t, proxy, onOpenSettings }) {
         </div>
         <TrendChart
           points={points}
-          window={data?.window}
+          step={step}
+          note={spanNote}
           labels={{ visits: t('chart.visits'), pageLoads: t('chart.pageLoads'), empty: t('chart.empty') }}
         />
       </section>
