@@ -1,0 +1,35 @@
+name: 功能建议
+description: 想要新的指标、新的视图或新的工具能力
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提之前先看一眼 [README 的限制](https://github.com/north30-dev/dsh-cloudflare-dash#限制)：RUM 数据集没有带宽/字节指标，这类需求不会被接受。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: 描述场景，而不是直接给方案
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望它怎么工作
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你试过的替代做法
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 确认
+      options:
+        - label: 这个需求只涉及 Cloudflare Web Analytics（RUM）已有的数据
+          required: false

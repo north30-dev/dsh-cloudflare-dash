@@ -1,6 +1,7 @@
 # Cloudflare 看板插件（dsh-cloudflare-dash）
 
 [![CI](https://github.com/north30-dev/dsh-cloudflare-dash/actions/workflows/ci.yml/badge.svg)](https://github.com/north30-dev/dsh-cloudflare-dash/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/dsh-cloudflare-dash)](https://www.npmjs.com/package/dsh-cloudflare-dash)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通过 Cloudflare 官方 API 展示 Web Analytics 数据。
@@ -28,6 +29,16 @@ git clone https://github.com/north30-dev/dsh-cloudflare-dash.git
 ```
 
 之后同样用 **Add plugin** 选中该目录。更新时 `git pull`，然后重启 DSH（或先移除再重新 Add）。
+
+**方式三：npm（CLI 用户）**
+
+已发布到 [npm](https://www.npmjs.com/package/dsh-cloudflare-dash)。装有 DSH CLI 的环境可以直接装：
+
+```bash
+dsh plugin --profile <profile> add dsh-cloudflare-dash
+```
+
+桌面端没有这个命令，用方式一或二。
 
 > 安装是**链接**到该目录，不是复制：移动或删除这个目录会让插件失效。卸载请用 Plugins 里的移除，不要直接删目录。
 

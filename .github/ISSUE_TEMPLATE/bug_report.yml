@@ -1,0 +1,83 @@
+name: Bug 报告
+description: 面板不显示、Token 验证失败、数据不对、agent 工具报错等
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **不要在这里粘贴 API Token。** 任何一行日志、截图或错误信息都请先确认不含 Token 原文与完整域名。
+
+        如果你怀疑的是安全问题（Token 泄露、鉴权绕过、SSRF 等），请不要开公开 issue，改走 [SECURITY.md](https://github.com/north30-dev/dsh-cloudflare-dash/blob/main/SECURITY.md) 里的私下报告渠道。
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本
+      description: package.json 里的 version，或插件页显示的版本
+      placeholder: 0.4.0
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      description: 桌面端在「关于」里；CLI 用 dsh --version
+      placeholder: 0.2.2-rc.3
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: 出问题的部分
+      options:
+        - 面板（看板）
+        - Token 配置 / 校验
+        - 代理 / 网络诊断
+        - agent 工具 cloudflare_analytics
+        - 安装 / 升级
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开 DSH 开始，尽量具体到点了哪个按钮
+      placeholder: |
+        1. 打开侧边栏的 Cloudflare 图标
+        2. 选择站点 imagetooolforge.com
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果 / 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或截图
+      description: 已脱敏（不含 Token、不含完整域名）。浏览器控制台报错、Host 日志都可以
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我确认上面没有粘贴 API Token 或 Global API Key
+          required: true
+        - label: 这不是安全问题（安全问题请走私下报告）
+          required: true

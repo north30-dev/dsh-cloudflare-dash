@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 报告安全漏洞（私下）
+    url: https://github.com/north30-dev/dsh-cloudflare-dash/security/advisories/new
+    about: 不要开公开 issue。Token 泄露、鉴权绕过、SSRF 等走私有漏洞报告。
+  - name: 安装与配置问题
+    url: https://github.com/north30-dev/dsh-cloudflare-dash#readme
+    about: 先看 README 的安装、快速开始和「验证失败」排查清单。
