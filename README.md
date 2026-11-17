@@ -2,7 +2,31 @@
 
 DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通过 Cloudflare 官方 API 展示 Web Analytics 数据。
 
+> 非 Cloudflare 官方产品。Cloudflare 是 Cloudflare, Inc. 的商标，本项目与 Cloudflare 不存在隶属或背书关系。
+
 > 当前状态：**M4 — Agent 工具**。看板（概览、趋势、维度、Core Web Vitals、加载性能、缓存与自动刷新）已完成；另提供一个按需调用的 agent 工具 `cloudflare_analytics`，未配置 Token 时不会出现在任何 agent 的工具列表里。
+
+![Cloudflare 看板截图](assets/screenshot-1.png)
+
+## 安装
+
+需要 **DSH ≥ 0.2.2-rc.3**（见 `package.json` 的 `engines.dsh`）。插件自带构建好的客户端产物，**不需要 Node、pnpm 或任何构建步骤**。
+
+**方式一：下载 ZIP**
+
+1. 本仓库页 → `Code` → `Download ZIP`，解压到一个**固定位置**（不要放临时目录或下载文件夹，原因见下）。
+2. DSH → **Plugins** → **Add plugin** → 选中解压出来的目录。
+3. 刷新页面，侧边栏出现柱状图标。
+
+**方式二：git clone**（便于更新）
+
+```bash
+git clone https://github.com/north30-dev/dsh-cloudflare-dash.git
+```
+
+之后同样用 **Add plugin** 选中该目录。更新时 `git pull`，然后重启 DSH（或先移除再重新 Add）。
+
+> 安装是**链接**到该目录，不是复制：移动或删除这个目录会让插件失效。卸载请用 Plugins 里的移除，不要直接删目录。
 
 ## 快速开始
 
@@ -12,9 +36,8 @@ DeepSeek Harness（DSH）插件：在侧边栏加一个 Cloudflare 面板，通�
      - `Account Settings:Read` —— 列出账户 + 读取 Web Analytics 站点列表（Cloudflare 官方文档中 `rum/site_info/list` 要求的权限就是它）
      - `Account Analytics:Read` —— 读取分析数据（M2 起使用）
    - Account Resources 选你自己的账户即可；只勾 Read，不要给 Edit
-2. 安装插件：**Plugins → Add plugin** 选择本目录（或 `plugin_manager.install_bundle` 指定本目录绝对路径）。
-3. 刷新页面，点侧边栏的柱状图标 → 粘贴 Token → 「验证并保存」。
-4. 看到「✅ 验证通过：N 个账户 / M 个 Web Analytics 站点」即配置完成。
+2. 点侧边栏的柱状图标 → 粘贴 Token → 「验证并保存」。
+3. 看到「✅ 验证通过：N 个账户 / M 个 Web Analytics 站点」即配置完成。
 
 ### 两种令牌
 
@@ -83,6 +106,8 @@ src/client/locale.js     # 中英文案
 src/client/styles.css    # 只用 --dsw-alias-* 主题 token
 dist/client.js           # 构建产物（已提交，安装即用）
 scripts/build-client.mjs # esbuild 打包
+assets/                  # 市场图标与截图
+screenshots.json         # 市场截图声明（路径相对本文件）
 ```
 
 ## 开发
