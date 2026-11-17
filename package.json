@@ -38,6 +38,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
+    "assets",
+    "screenshots.json",
     "icon.svg"
   ],
   "scripts": {
