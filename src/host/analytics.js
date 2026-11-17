@@ -221,7 +221,8 @@ function buildSummaryQuery(input) {
  * @returns {Array<{ from: Date, to: Date }>}
  */
 export function sliceWindow(fromMs, toMs, chunkMs) {
-  const chunk = typeof chunkMs === 'number' && Number.isFinite(chunkMs) && chunkMs > 0    ? chunkMs
+  const chunk = typeof chunkMs === 'number' && Number.isFinite(chunkMs) && chunkMs > 0
+    ? chunkMs
     : toMs - fromMs
   if (!Number.isFinite(chunk) || chunk <= 0 || !(toMs > fromMs)) {
     return [{ from: new Date(fromMs), to: new Date(toMs) }]
