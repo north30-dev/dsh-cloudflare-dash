@@ -127,4 +127,4 @@ pnpm run build                       # 生成 dist/client.js
 - 只展示 Token 有权访问的账户与站点。
 - 未启用 Web Analytics 的站点不会出现在站点列表里（面板会给提示，不报错）。
 - 插件依赖 DSH 的 slot 契约（`sidebar.panellist` / `main`），`engines.dsh` 声明了已验证的最小版本。
-- License：MIT（由仓库维护者维护 `LICENSE` 文件）。
+- License：MIT，见 [`LICENSE`](LICENSE)。

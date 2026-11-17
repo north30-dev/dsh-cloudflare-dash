@@ -72,7 +72,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 6. **面板自己负责滚动**：DSH 主面板给的是固定高度容器，页面根节点必须 `height:100%; overflow-y:auto`，否则滚轮无效、窗口变化不跟随。
    滚动容器同时是**布局查询容器**（`container: cfd-page / inline-size`）：卡片列的响应式断点用 `@container` 而不是 `@media`，因为面板宽度 ≠ 窗口宽度（旁边还有侧边栏）。列表卡片最多 3 列，宽面板下不要退回 `auto-fit`——它会在 1600px+ 铺出 5 列，每列太窄且容易横向溢出。
 7. 路由是 exact 注册，绕过 DSH `/api` 栅栏，因此必须自己调 `connection.requestRejection`，缺失时退化为 loopback 校验，并拒绝 `sec-fetch-site: cross-site`。
-8. 不提交 `LICENSE`：MIT 由仓库维护者自己维护。
+8. **许可证是 MIT，且已提交进仓库**：`LICENSE` 全文与 `package.json` 的 `license` 字段必须同时存在、保持一致，README 的许可证说明同步为 MIT；不要引入其他许可证，也不要删掉 `LICENSE`。
 9. **agent 工具只有一个**（`cloudflare_analytics`，用 `action` 区分用途），返回紧凑文本报告而不是原始 JSON；不要改成「每个视图一个工具」。注册必须带 `when` 条件，未配置 Token 时不出现。
 10. Host 侧**不能** `import '@deepseek-ai/dsh-tools'`（链接安装的插件目录解析不到 DSH 的 node_modules），所以工具定义手写：`parameters` 是**原始 JSON Schema**（不是首方工具 `defineTool` 用的 property-map 写法），`output.schema` 同为一个 JSON Schema 子集。
 
