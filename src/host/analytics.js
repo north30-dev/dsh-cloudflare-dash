@@ -31,11 +31,12 @@ let siteCache = { key: '', at: 0, sites: [] }
 
 /** Supported time ranges and their aggregation step. */
 export const RANGES = {
-  '24h': { ms: 24 * 3600 * 1000, dimension: 'datetimeHour', orderBy: 'datetimeHour_ASC', chunkMs: 0 },
-  '7d': { ms: 7 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC', chunkMs: 0 },
+  '24h': { ms: 24 * 3600 * 1000, dimension: 'datetimeHour', orderBy: 'datetimeHour_ASC' },
+  '7d': { ms: 7 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC' },
   // A month is fetched as weeks: Cloudflare's ABR sampling coarsens a 30-day
   // aggregate to the point of returning a couple of days with counts rounded to
-  // tens, while the same days queried a week at a time come back exact.
+  // tens, while the same days queried a week at a time come back exact. Ranges
+  // without `chunkMs` stay a single query.
   '30d': { ms: 30 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC', chunkMs: 7 * 24 * 3600 * 1000 },
 }
 
@@ -208,21 +209,35 @@ function buildSummaryQuery(input) {
 }
 
 /**
- * Cut a window into disjoint slices, newest first. Short ranges stay one slice,
- * so their result is byte-for-byte the query the dashboard always made.
+ * Cut a window into disjoint slices, newest first. A range without a chunk size
+ * stays one slice, so its result is the query the dashboard always made.
+ *
+ * Both guards are load-bearing: a chunk size of 0 or a NaN window used to leave
+ * `begin === end`, so the loop never advanced and the Host allocated slices until
+ * it hit its heap limit. Nothing may spin here — the caller runs inside a request.
  * @param {number} fromMs
  * @param {number} toMs
- * @param {number} chunkMs
+ * @param {number | undefined} chunkMs
  * @returns {Array<{ from: Date, to: Date }>}
  */
-function sliceWindow(fromMs, toMs, chunkMs) {
+export function sliceWindow(fromMs, toMs, chunkMs) {
+  const chunk = typeof chunkMs === 'number' && Number.isFinite(chunkMs) && chunkMs > 0    ? chunkMs
+    : toMs - fromMs
+  if (!Number.isFinite(chunk) || chunk <= 0 || !(toMs > fromMs)) {
+    return [{ from: new Date(fromMs), to: new Date(toMs) }]
+  }
   const slices = []
   let end = toMs
-  while (end > fromMs) {
-    const begin = Math.max(end - chunkMs, fromMs)
+  // At most one slice per day of the window: a wrong chunk size can never make
+  // this loop more than a few dozen times.
+  for (let guard = 0; guard < 400; guard += 1) {
+    if (!(end > fromMs)) break
+    const begin = Math.max(end - chunk, fromMs)
+    if (!(begin < end)) break
     slices.push({ from: new Date(begin), to: new Date(end) })
     end = begin
   }
+  if (slices.length === 0) return [{ from: new Date(fromMs), to: new Date(toMs) }]
   return slices
 }
 
@@ -290,7 +305,7 @@ export async function fetchOverview(options) {
   const to = new Date(now)
   const iso = (value) => value.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  const slices = sliceWindow(from.getTime(), to.getTime(), spec.chunkMs ?? spec.ms)
+  const slices = sliceWindow(from.getTime(), to.getTime(), spec.chunkMs)
   const window = { from: iso(from), to: iso(to) }
   const filter = { accountTag: options.accountId, siteTag: site.siteTag }
   const transport = { token: options.token, proxy: options.proxy }

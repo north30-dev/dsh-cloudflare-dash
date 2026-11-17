@@ -30,6 +30,7 @@ DeepSeek Harness（DSH）插件：在侧边栏增加一个 Cloudflare **Web Anal
 pnpm install --allow-build=esbuild   # 首次（esbuild 的 postinstall 需要放行）
 pnpm run build                       # 重新生成 dist/client.js
 node --check src/host/*.js           # Host 语法检查
+node tests/slice-window.mjs          # 切片窗口断言（不联网）
 ```
 
 安装/更新到本机 profile（需要 DSH 的 plugin_manager 工具）：
@@ -59,7 +60,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 | `src/host/state.js` | 非机密状态：Account ID、代理偏好，存 `$DSH_HOME/cloudflare-dash/state.json` |
 | `src/client/` | 浏览器侧：`index.jsx` 注册、`app.jsx` 控制器、`overview.jsx` 看板、`settings.jsx` 配置、`chart.jsx`、`format.js`、`api.js`、`locale.js`、`styles.css` |
 | `dist/client.js` | 构建产物（提交） |
-| `tests/` | 目前为空占位，无测试框架 |
+| `tests/` | 纯函数单测（`node tests/slice-window.mjs`），当前覆盖切片窗口 |
 
 ## 硬性约束
 
@@ -100,9 +101,18 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - 真实数据验证：用本机凭据里的 Token 跑一次性 Node 脚本查询 `analytics.js` 的导出函数，**只打印结果，不打印 Token**
 - 视觉与交互无法自动化：让用户刷新页面后截图确认
 
-## 已知问题（排查中）
+## 事故记录（2026-11-17，已修复）
 
-- **desktop Host 进程 OOM 崩溃**（`crash-*-host.log`，`exited with 134`，堆 ~4 GB）。2026-11-16 22:13 / 11-17 08:24 / 08:31 共三次；当前进程实测内存平稳（~320 MB / 90 s），不是常驻泄漏，而是特定事件触发的暴涨。两次紧跟「被中断的工具调用」。归因实验：`plugin_manager set_plugin include:cloudflare-dash false` 后观察是否复现；内存采样脚本见对话记录（每 30 s 写 `%TEMP%\dsh-host-mem.csv`）。本插件自查结论：Host 侧无定时器、无重试、缓存按 key 有界，只在面板轮询与工具调用时发请求。
+**desktop Host 进程 OOM 崩溃**（5 次，`exited with 134`，堆 ~4 GB，20 秒内从 340 MB 冲到 4 GB）。根因在自己写的 `sliceWindow`：
+
+- `RANGES['7d'].chunkMs` 写成 `0`，调用处用 `spec.chunkMs ?? spec.ms`——`??` 只兜 `null`/`undefined`，**0 会原样传下去**；
+- `chunk = 0` 时 `begin = Math.max(end - 0, fromMs) === end`，循环永不推进，每轮 push 一个 `Date` 对 → 面板一请求 24h/7d（默认 7d）宿主就死循环 → OOM → 应用崩溃。
+- 误导之处：`30d` 反而正常（它真的有 7 天切片）；「停用插件就稳定」只是因为没面板就不发请求；agent 工具一度被冤枉（它调 7d 同样触发）。
+
+**教训（写代码时守住）**
+1. **请求路径里不允许任何不受限循环**：给循环加上界，并且在进入前把参数归一化（`chunkMs > 0 ? chunkMs : 窗口长度`）。
+2. `??` 不兜 `0`/`NaN`/空串；数值兜底用显式比较。
+3. 关键纯函数要能脱离网络单测：`sliceWindow` 已导出，`tests/slice-window.mjs` 钉住 0/负数/NaN/Infinity 的终止行为。
 
 ## 当前状态
 
