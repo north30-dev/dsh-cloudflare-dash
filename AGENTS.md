@@ -5,7 +5,7 @@
 ## 这是什么
 
 DeepSeek Harness（DSH）插件：在侧边栏增加一个 Cloudflare **Web Analytics** 看板。
-- 插件包名：`@local/dsh-cloudflare-dash`
+- 插件包名：`dsh-cloudflare-dash`
 - 插件行 id：`cloudflare-dash`（见 `cordis.patch.yml`）
 - 侧边栏面板 id / `main` 面板 key：`cloudflare`
 - 已验证的 DSH 版本：`0.2.2-rc.3`（`package.json` 的 `engines.dsh`）

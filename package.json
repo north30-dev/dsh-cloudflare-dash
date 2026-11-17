@@ -1,9 +1,26 @@
 {
-  "name": "@local/dsh-cloudflare-dash",
+  "name": "dsh-cloudflare-dash",
   "version": "0.4.0",
-  "private": true,
   "type": "module",
-  "description": "Cloudflare dashboard plugin for DeepSeek Harness, built on the official Cloudflare API.",
+  "description": "Cloudflare Web Analytics dashboard for DeepSeek Harness, built on the official Cloudflare API.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/north30-dev/dsh-cloudflare-dash.git"
+  },
+  "homepage": "https://github.com/north30-dev/dsh-cloudflare-dash#readme",
+  "bugs": {
+    "url": "https://github.com/north30-dev/dsh-cloudflare-dash/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "harness",
+    "cloudflare",
+    "web-analytics",
+    "dashboard"
+  ],
   "engines": {
     "dsh": ">=0.2.2-rc.3"
   },

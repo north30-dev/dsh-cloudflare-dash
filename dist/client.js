@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: "@local/dsh-cloudflare-dash",
+  id: "dsh-cloudflare-dash",
   factory(require) {
     var module = { exports: {} };
     var exports = module.exports;
