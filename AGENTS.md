@@ -100,6 +100,10 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - 真实数据验证：用本机凭据里的 Token 跑一次性 Node 脚本查询 `analytics.js` 的导出函数，**只打印结果，不打印 Token**
 - 视觉与交互无法自动化：让用户刷新页面后截图确认
 
+## 已知问题（排查中）
+
+- **desktop Host 进程 OOM 崩溃**（`crash-*-host.log`，`exited with 134`，堆 ~4 GB）。2026-11-16 22:13 / 11-17 08:24 / 08:31 共三次；当前进程实测内存平稳（~320 MB / 90 s），不是常驻泄漏，而是特定事件触发的暴涨。两次紧跟「被中断的工具调用」。归因实验：`plugin_manager set_plugin include:cloudflare-dash false` 后观察是否复现；内存采样脚本见对话记录（每 30 s 写 `%TEMP%\dsh-host-mem.csv`）。本插件自查结论：Host 侧无定时器、无重试、缓存按 key 有界，只在面板轮询与工具调用时发请求。
+
 ## 当前状态
 
 - ✅ M1 配置闭环（Token UI、用户级/帐户级校验、代理开关、网络诊断）
