@@ -29,6 +29,7 @@ DeepSeek Harness（DSH）插件：在侧边栏增加一个 Cloudflare **Web Anal
 ```bash
 pnpm install --allow-build=esbuild   # 首次（esbuild 的 postinstall 需要放行）
 pnpm run build                       # 重新生成 dist/client.js
+node scripts/check-manifest.mjs      # 包名 / cordis.patch.yml / bundle id / files 一致性
 node --check src/host/*.js           # Host 语法检查
 node tests/slice-window.mjs          # 切片窗口断言（不联网）
 ```
@@ -121,4 +122,5 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/系统维度、加载性能阶段分解
 - ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，`when` 门控，已用真实数据端到端验证）
 - 🟡 待修（已知，不在 M4 范围）：Cloudflare ABR 采样无法在 UI 标注（无 `sampleInterval` 字段）；可选做 `confidence(level)` 区间展示
-- ⬜ M5 开源收尾（SECURITY.md、CI、npm 发布）
+- ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
+- ⬜ 发布：npm 包、GitHub Release、收录到插件目录

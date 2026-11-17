@@ -66,6 +66,7 @@ Token 保存在 DSH 凭据库（`~/.credentials.yaml` 的记录 `dsh-cloudflare-
 - 无遥测、无第三方上报；请求只发往 `api.cloudflare.com`。
 - Token 只在 Host 侧使用；浏览器只拿到「已配置 + 掩码」。
 - 也可以改用它支持的备用来源：启动环境变量 `CLOUDFLARE_API_TOKEN`（优先级低于 UI 保存的记录）。
+- 发现安全问题请**私下**报告，不要开公开 issue，方式见 [`SECURITY.md`](SECURITY.md)。
 
 ## 代理
 
@@ -115,11 +116,15 @@ screenshots.json         # 市场截图声明（路径相对本文件）
 ```bash
 pnpm install --allow-build=esbuild   # 首次
 pnpm run build                       # 生成 dist/client.js
+node scripts/check-manifest.mjs      # 包名 / 补丁行 / bundle id / files 是否一致
+node tests/slice-window.mjs          # 纯函数断言（不联网）
 ```
 
 改客户端代码后必须重新 `pnpm run build`，然后在 DSH 里刷新页面；Host 侧改动通常需要重启 DSH（或依赖 HMR）。
 
-`dist/client.js` 是提交进仓库的产物：这样用户克隆后无需 Node 工具链即可安装。提交前请重新构建，避免产物与源码不一致。
+`dist/client.js` 是提交进仓库的产物：这样用户克隆后无需 Node 工具链即可安装。提交前请重新构建，避免产物与源码不一致——CI 会重新构建并对比 `dist/client.js`，不一致就失败。
+
+包名一共出现在三处：`package.json` 的 `name`、`cordis.patch.yml` 的行 `name`、`dist/client.js` 里的 loader `id`。改名必须三处一起改并重新构建，`check-manifest` 就是用来拦这个的。
 
 ## 路线图
 
@@ -127,7 +132,8 @@ pnpm run build                       # 生成 dist/client.js
 - ✅ M2 概览首屏：站点选择、24h/7d/30d、访问趋势曲线、热门页面/来源/国家/浏览器、Core Web Vitals（P75 + 分布）
 - ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/操作系统维度、加载性能阶段分解（DNS/TCP/TLS/请求/响应/渲染/首绘）
 - ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，未配置时不可见，按需调用）
-- ⬜ M5 开源收尾（SECURITY.md、CI、发布）
+- ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
+- ⬜ 发布：npm 包、GitHub Release、收录到插件目录
 
 ## 数据说明
 
