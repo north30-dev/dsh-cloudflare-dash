@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { callApi, proxyQuery } from './api.js'
 import { TrendChart } from './chart.jsx'
 import { buildOverviewCsv, csvFilename } from './csv.js'
-import { fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
+import { daysSince, fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
 
 const RANGE_OPTIONS = ['24h', '7d', '30d']
 
@@ -173,6 +173,9 @@ export function Overview({ t, proxy, onOpenSettings }) {
 
   const site = data?.site ?? sites.find((entry) => entry.siteTag === siteTag)
   const currentSite = site?.siteTag === siteTag ? site : undefined
+  // How long this Web Analytics site has been collecting, from the API's own
+  // `created` stamp rather than from the first bucket that has data.
+  const createdDays = daysSince(currentSite?.created)
 
   if (sitesError !== null) {
     return (
@@ -230,7 +233,12 @@ export function Overview({ t, proxy, onOpenSettings }) {
       <header className="cfd-topbar">
         <div>
           <h2 className="cfd-title">{t('overview.title')}</h2>
-          <p className="cfd-sub">{currentSite === undefined ? t('overview.loading') : currentSite.host}</p>
+          <p className="cfd-sub">
+            {currentSite === undefined ? t('overview.loading') : currentSite.host}
+            {createdDays === null ? null : (
+              <span className="cfd-sub-note">{`· ${t('overview.created')} ${createdDays} ${t('overview.days')}`}</span>
+            )}
+          </p>
         </div>
         <div className="cfd-toolbar">
           <select className="cfd-select" value={range} onChange={(event) => setRange(event.target.value)}>
@@ -244,7 +252,6 @@ export function Overview({ t, proxy, onOpenSettings }) {
             className="cfd-select"
             value={siteTag}
             onChange={(event) => setSiteTag(event.target.value)}
-            disabled={sites.length <= 1}
           >
             {sites.map((entry) => (
               <option key={entry.siteTag} value={entry.siteTag}>

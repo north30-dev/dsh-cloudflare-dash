@@ -503,7 +503,14 @@ export async function fetchOverview(options) {
   const performanceSource = newestSampled((account) => account.performance)
 
   const payload = {
-    site: { siteTag: site.siteTag, host: site.host, enabled: site.enabled },
+    site: {
+      siteTag: site.siteTag,
+      host: site.host,
+      enabled: site.enabled,
+      // When this Web Analytics site was set up, not when the domain was
+      // registered: the panel labels it as "created" for that reason.
+      ...(site.created === undefined ? {} : { created: site.created }),
+    },
     range: options.range,
     bots,
     window,

@@ -67,6 +67,26 @@ export function fmtRatio(value) {
 }
 
 /**
+ * Whole days since an ISO instant, or null when the value cannot be read.
+ *
+ * Cloudflare's RUM `created` carries six fractional digits
+ * (`2026-11-11T15:04:46.023839Z`); some engines reject that shape, so the
+ * fraction is trimmed to milliseconds before parsing. A future stamp reads as
+ * null rather than as a negative age.
+ * @param {unknown} iso
+ * @param {number} [now]
+ * @returns {number | null}
+ */
+export function daysSince(iso, now = Date.now()) {
+  if (typeof iso !== 'string' || iso === '') return null
+  const normalized = iso.replace(/(\.\d{3})\d+/, '$1')
+  const at = Date.parse(normalized)
+  if (!Number.isFinite(at) || !Number.isFinite(now)) return null
+  const days = Math.floor((now - at) / 86_400_000)
+  return days >= 0 ? days : null
+}
+
+/**
  * Local clock label for an hourly bucket, or the bucket's own date.
  * @param {string} iso
  * @param {'hour' | 'day'} step
