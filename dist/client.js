@@ -491,6 +491,7 @@ function SettingsView({ t, status, onStatus, onClose }) {
   const [proxyEnabled, setProxyEnabled] = (0, import_react3.useState)(() => readProxyPrefs().enabled);
   const [proxyUrl, setProxyUrl] = (0, import_react3.useState)(() => readProxyPrefs().url || DEFAULT_PROXY_URL);
   const [busy, setBusy] = (0, import_react3.useState)(false);
+  const [verifying, setVerifying] = (0, import_react3.useState)(false);
   const [probing, setProbing] = (0, import_react3.useState)(false);
   const [replacing, setReplacing] = (0, import_react3.useState)(false);
   const [notice, setNotice] = (0, import_react3.useState)(null);
@@ -545,6 +546,23 @@ ${t("hint.unauthorized")}`;
       setBusy(false);
     }
   }
+  async function revalidate() {
+    setVerifying(true);
+    setNotice(null);
+    try {
+      const payload = await callApi("status?verify=1");
+      onStatus(payload);
+      if (typeof payload?.accessError === "string") {
+        setNotice({ kind: "error", text: payload.accessError });
+      } else {
+        setNotice({ kind: "ok", text: t("msg.verified") });
+      }
+    } catch (error) {
+      setNotice({ kind: "error", text: describeError(error) });
+    } finally {
+      setVerifying(false);
+    }
+  }
   async function runProbe() {
     setProbing(true);
     setNotice(null);
@@ -560,7 +578,7 @@ ${t("hint.unauthorized")}`;
   }
   const suspicious = suspiciousToken(token);
   const verifiedAt = formatTime(status?.verifiedAt);
-  return /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react3.default.createElement("header", { className: "cfd-topbar" }, /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("h2", { className: "cfd-title" }, t("title")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-sub" }, t("subtitle"))), onClose === void 0 ? null : /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-toolbar" }, /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", onClick: onClose }, t("settings.back")))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-card" }, configured && !replacing ? /* @__PURE__ */ import_react3.default.createElement(import_react3.default.Fragment, null, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-meta" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, status.masked ?? "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.masked"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value" }, typeof status.accounts === "number" ? status.accounts : "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.accounts"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value" }, typeof status.rumSites === "number" ? status.rumSites : "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.sites"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, verifiedAt ?? t("status.neverVerified")), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.verified")))), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint" }, status.source === "environment" ? t("status.source.environment") : t("status.source.stored"), typeof status.accountId === "string" ? ` \xB7 Account ID: ${status.accountId}` : ""), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-actions" }, /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => setReplacing(true) }, t("action.replace")), /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy, onClick: () => void remove() }, t("action.delete")))) : null, showTokenForm ? /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-label" }, t("step.token.title")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-desc" }, t("step.token.desc"), " ", /* @__PURE__ */ import_react3.default.createElement("span", { className: "cfd-desc" }, t("perm.list"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-row" }, /* @__PURE__ */ import_react3.default.createElement(
+  return /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-page" }, /* @__PURE__ */ import_react3.default.createElement("header", { className: "cfd-topbar" }, /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("h2", { className: "cfd-title" }, t("title")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-sub" }, t("subtitle"))), onClose === void 0 ? null : /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-toolbar" }, /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", onClick: onClose }, t("settings.back")))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-card" }, configured && !replacing ? /* @__PURE__ */ import_react3.default.createElement(import_react3.default.Fragment, null, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-meta" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, status.masked ?? "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.masked"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value" }, typeof status.accounts === "number" ? status.accounts : "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.accounts"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value" }, typeof status.rumSites === "number" ? status.rumSites : "\u2014"), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.sites"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-value cfd-metric-value--small" }, verifiedAt ?? t("status.neverVerified"), status.verifiedStale === true ? ` \xB7 ${t("status.stale")}` : ""), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-metric-label" }, t("status.verified")))), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint" }, status.source === "environment" ? t("status.source.environment") : t("status.source.stored"), typeof status.accountId === "string" ? ` \xB7 Account ID: ${status.accountId}` : ""), typeof status.accessError === "string" ? /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-hint cfd-warn" }, status.accessError) : null, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-actions" }, /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy || verifying, onClick: () => void revalidate() }, verifying ? t("action.verifying") : t("action.verify")), /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy || verifying, onClick: () => setReplacing(true) }, t("action.replace")), /* @__PURE__ */ import_react3.default.createElement("button", { className: "cfd-btn", disabled: busy || verifying, onClick: () => void remove() }, t("action.delete")))) : null, showTokenForm ? /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-step" }, /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-label" }, t("step.token.title")), /* @__PURE__ */ import_react3.default.createElement("p", { className: "cfd-desc" }, t("step.token.desc"), " ", /* @__PURE__ */ import_react3.default.createElement("span", { className: "cfd-desc" }, t("perm.list"))), /* @__PURE__ */ import_react3.default.createElement("div", { className: "cfd-row" }, /* @__PURE__ */ import_react3.default.createElement(
     "input",
     {
       className: "cfd-input",
@@ -714,6 +732,9 @@ var zh = {
   "status.accounts": "\u53EF\u89C1\u8D26\u6237",
   "status.sites": "Web Analytics \u7AD9\u70B9",
   "status.neverVerified": "\u672C\u6B21\u542F\u52A8\u5C1A\u672A\u9A8C\u8BC1",
+  "status.stale": "\u4E0A\u6B21\u9A8C\u8BC1",
+  "action.verifying": "\u9A8C\u8BC1\u4E2D\u2026",
+  "msg.verified": "\u9A8C\u8BC1\u901A\u8FC7\uFF0C\u8D26\u6237\u4E0E\u7AD9\u70B9\u6570\u91CF\u5DF2\u66F4\u65B0",
   "status.noSites": "\u672A\u53D1\u73B0\u5DF2\u542F\u7528 Web Analytics \u7684\u7AD9\u70B9",
   "hint.envFallback": "\u5220\u9664\u540E\u4ECD\u4F1A\u56DE\u9000\u5230\u73AF\u5883\u53D8\u91CF\u4E2D\u7684 Token\u3002",
   "probe.direct": "\u76F4\u8FDE",
@@ -827,6 +848,9 @@ var en = {
   "status.accounts": "Visible accounts",
   "status.sites": "Web Analytics sites",
   "status.neverVerified": "Not verified in this run",
+  "status.stale": "from the last run",
+  "action.verifying": "Verifying\u2026",
+  "msg.verified": "Verification passed; account and site counts updated",
   "status.noSites": "No site with Web Analytics enabled was found",
   "hint.envFallback": "Removing the stored token falls back to the environment variable.",
   "probe.direct": "Direct",

@@ -58,10 +58,10 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 | `src/host/analytics.js` | RUM GraphQL 查询模板与数据整形 |
 | `src/host/http.js` | 零依赖出网：直连 / HTTP CONNECT 代理 / 阶段计时 |
 | `src/host/store.js` | Token 存取（凭据记录）与格式识别 |
-| `src/host/state.js` | 非机密状态：Account ID、代理偏好，存 `$DSH_HOME/cloudflare-dash/state.json` |
+| `src/host/state.js` | 非机密状态：Account ID、代理偏好、上次验证快照（`accounts`/`rumSites`/`verifiedAt`），存 `$DSH_HOME/cloudflare-dash/state.json` |
 | `src/client/` | 浏览器侧：`index.jsx` 注册、`app.jsx` 控制器、`overview.jsx` 看板、`settings.jsx` 配置、`chart.jsx`、`format.js`、`api.js`、`locale.js`、`styles.css` |
 | `dist/client.js` | 构建产物（提交） |
-| `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）。`pnpm test` 跑全部 |
+| `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）、`tests/state.mjs`（验证快照读写，用临时 `DSH_HOME`）。`pnpm test` 跑全部 |
 
 ## 硬性约束
 
@@ -95,6 +95,12 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - **只查 `confidence.count`**：请求 `confidence.sum.visits` 会让 Cloudflare 把整行返回成 `[]`（实测，无报错），所以 `sum` 的置信区间拿不到，也别试着取。
 - `confidence.count.isValid` **不能当采样标志**：实测无采样的 7d 窗口也返回 `isValid: false`，区间还退化成 `lower === upper === estimate`。判采样只看 `sampleSize < estimate`。
 - 概览结果在 Host 内存里按 `账户:站点:范围` 缓存（24h 60s / 7d 120s / 30d 300s）；手动刷新传 `fresh=1` 绕过缓存，Token 变更时清空缓存。
+- **`GET /status` 的验证语义**：`lastAccess`/`verifiedAt` 是进程内变量，重启即失效；之前这导致设置页的「可见账户 / Web Analytics 站点」在每次重启后都显示 `—`。现在验证结果会以**非机密快照**存进 `state.json` 的 `access`，并且：
+  - 响应里带了快照但本进程尚未验证 → 加 `verifiedStale: true`，时间戳是**上一次运行**的；
+  - 完全没有任何信息（首次、或快照被删）且 Token 已配置 → 懒验证一次；
+  - `?verify=1` 强制重新验证（设置页「重新验证」按钮走这条）；
+  - 验证失败不返回 500，只带 `accessError` 文本，快照继续可用。
+  改这块时别把快照字段扩成任何能反推 Token 的东西，也不要把验证塞进每次 `GET /status`（会伤 API 额度）。
 - `ctx.tools.register(definition, { when })` 的硬性要求：`definition` 必须带 `output: { schema, render(args, value) => ContentBlock[] }`（文本块形状是 `{ type: 'text', text }`），缺 `render` 会直接抛 `TypeError`；`run_code` 是保留工具名。`when` 每个模型步求值一次，可返回 Promise，返回 false 表示该步不向模型暴露这个工具。
 - 工具定义不能只靠注册时的条件做安全边界：`execute` 里仍要自己校验参数（手写注册没有 `defineTool` 的入参校验）。
 
@@ -104,6 +110,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - 客户端产物：构建后用 stub 加载验证注册（`window.__ModuleLoader__` 假实现 + `require('react')` 桩），确认 exports 为 `apply`/`inject`
 - 路由是否注册：用 `curl -i` 请求 `/cloudflare-dash/api/v1/status|sites|overview`，未带浏览器 Cookie 时应返回 **401** 且 body 是插件的 JSON；返回 404 说明 Host 旧代码还在运行。**不要用 PowerShell 的 `Invoke-WebRequest` 判断**——它对本站路由会误报 404（curl 同一时刻是 401）。
 - 真实数据验证：用本机凭据里的 Token 跑一次性 Node 脚本查询 `analytics.js` 的导出函数，**只打印结果，不打印 Token**
+- 路由逻辑可以**不重启 DSH** 就验证：用假 ctx（`get('credentials')` 返回带 Token 的桩、`webServer.register` 捕获 handler）调 `registerRoutes(ctx)`，再伪造 `request`/`response` 打 `/status`，能覆盖「快照 / 懒验证 / `verify=1`」三条路径
 - 视觉与交互无法自动化：让用户刷新页面后截图确认
 
 ## 事故记录（2026-11-17，已修复）
