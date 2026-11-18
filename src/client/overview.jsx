@@ -7,6 +7,27 @@ import { fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
 const RANGE_OPTIONS = ['24h', '7d', '30d']
 
 /**
+ * MM-DD for an ISO instant, in the viewer's time zone.
+ * @param {string | undefined} iso
+ * @returns {string}
+ */
+function dayLabel(iso) {
+  if (typeof iso !== 'string') return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * "11-11 → 11-18", the window a quantile block actually describes.
+ * @param {{ from: string, to: string }} window
+ * @returns {string}
+ */
+function spanLabel(window) {
+  return `${dayLabel(window.from)} → ${dayLabel(window.to)}`
+}
+
+/**
  * @param {{ t: (key: string) => string, proxy: { enabled: boolean, url: string }, onOpenSettings: () => void }} props
  */
 export function Overview({ t, proxy, onOpenSettings }) {
@@ -136,8 +157,21 @@ export function Overview({ t, proxy, onOpenSettings }) {
   const previous = data?.previous ?? { visits: 0, pageLoads: 0 }
   const top = data?.top ?? { paths: [], referrers: [], countries: [], browsers: [], devices: [], os: [] }
   const vitals = data?.vitals ?? null
+  const performance = data?.performance ?? null
   const visitsDelta = fmtDelta(totals.visits, previous.visits)
   const loadsDelta = fmtDelta(totals.pageLoads, previous.pageLoads)
+
+  // A long range answers its quantiles from the newest slice that has samples:
+  // a P75 cannot be summed, and a whole-window P75 on a sampled range is an
+  // extrapolation. Both cards say which window they describe.
+  const sampling = data?.sampling?.current
+  const sampled = sampling?.sampled === true
+  const offRange = (block) => {
+    if (block === null || block.window === undefined || data === null) return false
+    return block.window.from !== data.window.from || block.window.to !== data.window.to
+  }
+  const vitalsPartial = offRange(vitals)
+  const performancePartial = offRange(performance)
 
   return (
     <div className="cfd-page cfd-page--wide">
@@ -202,6 +236,13 @@ export function Overview({ t, proxy, onOpenSettings }) {
         />
       </section>
 
+      {sampled ? (
+        <p className="cfd-notice">
+          {t('sampling.warning')}
+          {` · ${t('sampling.samples')} ${fmtInt(sampling.samples)} / ${t('sampling.estimated')} ${fmtInt(sampling.estimated)}`}
+        </p>
+      ) : null}
+
       <section className="cfd-card">
         <div className="cfd-card-head">
           <h3 className="cfd-card-title">{t('chart.title')}</h3>
@@ -227,7 +268,10 @@ export function Overview({ t, proxy, onOpenSettings }) {
       <section className="cfd-card">
         <div className="cfd-card-head">
           <h3 className="cfd-card-title">{t('vitals.title')}</h3>
-          <span className="cfd-card-sub">{t('vitals.sub')}</span>
+          <span className="cfd-card-sub">
+            {t('vitals.sub')}
+            {vitalsPartial ? ` · ${t('window.label')} ${spanLabel(vitals.window)}` : ''}
+          </span>
         </div>
         {vitals === null ? (
           <p className="cfd-hint">{t('vitals.empty')}</p>
@@ -240,20 +284,27 @@ export function Overview({ t, proxy, onOpenSettings }) {
             <VitalTile label="TTFB" value={fmtDuration(vitals.ttfb.p75)} metric={vitals.ttfb} t={t} />
           </div>
         )}
-        <p className="cfd-foot">{t('vitals.note')}</p>
+        <p className="cfd-foot">
+          {t('vitals.note')}
+          {vitalsPartial ? ` ${t('vitals.note.partial')}` : ''}
+        </p>
       </section>
 
       <section className="cfd-card">
         <div className="cfd-card-head">
           <h3 className="cfd-card-title">{t('perf.title')}</h3>
-          <span className="cfd-card-sub">{t('perf.sub')}</span>
+          <span className="cfd-card-sub">
+            {t('perf.sub')}
+            {performancePartial ? ` · ${t('window.label')} ${spanLabel(performance.window)}` : ''}
+          </span>
         </div>
-        <PerformanceCard performance={data?.performance ?? null} t={t} />
+        <PerformanceCard performance={performance} t={t} partial={performancePartial} />
       </section>
 
       <footer className="cfd-foot">
         {t('overview.footer')}
         {data === null ? '' : ` · ${new Date(data.generatedAt).toLocaleTimeString()}`}
+        {data === null || data.slices < 2 ? '' : ` · ${data.slices} ${t('overview.slices')}`}
         {data?.cached === true ? ` · ${t('overview.cached')}` : ''}
       </footer>
     </div>
@@ -355,9 +406,10 @@ function VitalTile({ label, value, metric, t }) {
  * @param {{
  *   performance: { samples: number, pageLoad: number | null, phases: Record<string, number | null> } | null,
  *   t: (key: string) => string,
+ *   partial?: boolean,
  * }} props
  */
-function PerformanceCard({ performance, t }) {
+function PerformanceCard({ performance, t, partial }) {
   if (performance === null) return <p className="cfd-hint">{t('perf.empty')}</p>
   const phases = [
     ['dns', t('perf.dns')],
@@ -390,7 +442,10 @@ function PerformanceCard({ performance, t }) {
           </li>
         ))}
       </ul>
-      <p className="cfd-foot">{t('perf.note')}</p>
+      <p className="cfd-foot">
+        {t('perf.note')}
+        {partial === true ? ` ${t('perf.note.partial')}` : ''}
+      </p>
     </div>
   )
 }

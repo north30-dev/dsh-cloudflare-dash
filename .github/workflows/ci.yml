@@ -37,7 +37,10 @@ jobs:
         run: node scripts/check-manifest.mjs
 
       - name: Unit tests
-        run: node tests/slice-window.mjs
+        run: |
+          for file in tests/*.mjs; do
+            node "$file"
+          done
 
       - name: Rebuild the client bundle and fail on drift
         run: |

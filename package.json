@@ -43,7 +43,8 @@
     "icon.svg"
   ],
   "scripts": {
-    "build": "node scripts/build-client.mjs"
+    "build": "node scripts/build-client.mjs",
+    "test": "node tests/sampling.mjs && node tests/slice-window.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

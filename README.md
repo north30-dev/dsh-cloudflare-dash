@@ -147,6 +147,7 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 - ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/操作系统维度、加载性能阶段分解（DNS/TCP/TLS/请求/响应/渲染/首绘）
 - ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，未配置时不可见，按需调用）
 - ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
+- ✅ M6 采样透明化（分位数取最近有样本的切片并标注窗口、环比改用独立的上一周期切片、采样状态提示）
 - ⬜ 发布：npm 包、GitHub Release、收录到插件目录
 
 ## 数据说明
@@ -163,13 +164,16 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 
 **不包含带宽/流量字节**：RUM 数据集没有该指标，官网 Web Analytics 的「Data served」无法等价复现，面板里也没有伪造。时间桶按 UTC 取回、按浏览器本地时区展示。
 
-**采样与 30 天窗口**：Cloudflare 对 RUM 聚合做 ABR 采样，**窗口越长分辨率越低**。一次 30 天的查询实测只回 2 天数据、数值全是 10 的倍数（7 天窗口却有完整 6 天），所以 30d 改为**按 7 天切片查询再合并**：总量、趋势、六类 Top 榜由切片相加（精确），Core Web Vitals 与加载性能的分位数不能相加，仍走整窗查询（可能是采样估计值）。这条规则只影响长窗口，24h / 7d 仍是一次查询。（[官方 sampling 说明](https://developers.cloudflare.com/analytics/graphql-api/sampling/)）
+**采样与长窗口**：Cloudflare 对 RUM 聚合做 ABR 采样，**窗口越长分辨率越低**。实测一次 30 天查询只回 8 天里带流量的 2 天、数值全是 10 的倍数，而且该窗口是**用 5 个样本外推出 50 次页面加载**（`confidence.count` 的 `sampleSize` 与 `estimate`）。所以 30d 改为**按 7 天切片查询再合并**，上一周期另开一套独立切片（30 不是 7 的整数倍，共用一套网格会把某个切片劈成两段）：总量、趋势、Top 榜、环比都是切片相加的精确值。24h / 7d 仍是一次查询。（[官方 sampling 说明](https://developers.cloudflare.com/analytics/graphql-api/sampling/)）
 
-**缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。
+**分位数与采样标注**：P75 不能跨窗口相加，所以 Core Web Vitals 与加载性能取**最近一段有样本的切片**（30d 下通常就是近 7 天），卡片上会标出该窗口的起止日期。整窗 30 天的 P75 实测来自 7 个样本外推成的 70，同一站点 LCP 会显示成 7.40 s，而按周查询是 1.42 s。查询同时读取 `confidence(level: 0.95) { count { estimate sampleSize } }`：一旦某个切片被采样，面板顶部会出现「采样估算」提示并给出实际样本数与估算量；没有任何采样时不作标注，也不会谎称「精确」。
+
+**缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。30d 一次加载会并行发出 10 个切片查询（当前 5 + 上一周期 5）。
 
 ## 限制
 
 - 只展示 Token 有权访问的账户与站点。
 - 未启用 Web Analytics 的站点不会出现在站点列表里（面板会给提示，不报错）。
+- 长范围（30d）下 Core Web Vitals 与加载性能描述的是**最近一段有样本的窗口**，不是整段 30 天；卡片上会标出该窗口，整段的分位数无法从采样数据里还原。
 - 插件依赖 DSH 的 slot 契约（`sidebar.panellist` / `main`），`engines.dsh` 声明了已验证的最小版本。
 - License：MIT，见 [`LICENSE`](LICENSE)。

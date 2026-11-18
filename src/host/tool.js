@@ -126,6 +126,36 @@ function comparison(current, previous) {
   return `${delta(current, previous)} vs ${int(previous)} previous`
 }
 
+/**
+ * Describe which period a quantile block covers, or nothing when it covers the
+ * whole requested range. A 30d view answers from its newest sampled week, so
+ * silence here would read as "these are 30-day numbers".
+ * @param {{ from: string, to: string } | undefined} part
+ * @param {{ from: string, to: string } | undefined} whole
+ * @returns {string}
+ */
+function windowNote(part, whole) {
+  if (part === undefined) return ''
+  if (whole !== undefined && part.from === whole.from && part.to === whole.to) return ''
+  return `, window ${part.from} → ${part.to}`
+}
+
+/**
+ * One phrase about how much of a window was measured rather than extrapolated.
+ * @param {{ slices: number, known: number, sampled: boolean, samples: number, estimated: number } | undefined} sampling
+ * @returns {string}
+ */
+function samplingNote(sampling) {
+  if (sampling === undefined) return ''
+  if (sampling.known === 0) return 'no data in this range'
+  if (sampling.sampled !== true) {
+    return sampling.slices === 1
+      ? 'exact (single query, not sampled)'
+      : `exact (${sampling.slices} slices summed, none sampled)`
+  }
+  return `sampled: ${int(sampling.samples)} samples for ${int(sampling.estimated)} page loads`
+}
+
 /** Top lists, in the order the panel shows them. */
 const LISTS = [
   ['paths', 'Top pages'],
@@ -186,6 +216,8 @@ function overviewReport(data) {
     `Visits ${int(totals.visits)} (${comparison(totals.visits, previous.visits)})`
     + ` · Page loads ${int(totals.pageLoads)} (${comparison(totals.pageLoads, previous.pageLoads)})`,
   )
+  const basis = samplingNote(data.sampling?.current)
+  if (basis !== '') lines.push(`Basis: ${basis}`)
 
   const series = Array.isArray(data.series) ? data.series : []
   if (series.length === 0) {
@@ -217,7 +249,7 @@ function overviewReport(data) {
   if (data.vitals === null || data.vitals === undefined) {
     lines.push('Core Web Vitals: (no rows)')
   } else {
-    lines.push(`Core Web Vitals (P75, ${int(data.vitals.samples)} samples, all field data)`)
+    lines.push(`Core Web Vitals (P75, ${int(data.vitals.samples)} samples, field data${windowNote(data.vitals.window, data.window)})`)
     for (const [key, label] of VITALS) {
       const metric = data.vitals[key]
       if (metric === undefined) continue
@@ -238,7 +270,7 @@ function overviewReport(data) {
       .filter(([key]) => data.performance.phases?.[key] !== null && data.performance.phases?.[key] !== undefined)
       .map(([key, label]) => `${label} ${duration(data.performance.phases[key])}`)
       .join(' · ')
-    lines.push(`Loading phases (P75, page load ${duration(data.performance.pageLoad)}, ${int(data.performance.samples)} samples)`)
+    lines.push(`Loading phases (P75, page load ${duration(data.performance.pageLoad)}, ${int(data.performance.samples)} samples${windowNote(data.performance.window, data.window)})`)
     lines.push(phases === '' ? '(no phase rows)' : phases)
   }
 

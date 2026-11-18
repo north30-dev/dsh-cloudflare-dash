@@ -160,6 +160,17 @@
   white-space: pre-wrap;
 }
 
+.cfd-notice {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 .cfd-meta {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
