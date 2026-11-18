@@ -170,6 +170,11 @@ workflow 依次做：语法检查 → 清单一致性 → 全部单测 → 重�
 
 ⚠️ 这个绑定**创建后不能修改**，删了才能重建——提交前核对一遍 `north30-dev` / `dsh-cloudflare-dash` / `release.yml` 三个字符串。
 
+同页还有两个包级设置，建议一起调：
+
+- **Allowed actions**：必须勾 **Allow npm publish**。不勾的话 npm 只允许 `npm stage publish`（先暂存、再人工批准），tag 触发的自动发布就走不通了。
+- **Publishing access**：选最严格的 *Require two-factor authentication and disallow bypass 2fa tokens*。既然发布已经全部走 OIDC，就不该再留一条「token 可绕过 2FA」的口子；两档设置对 trusted publisher 都有效，选严格的不影响发版。
+
 ### 备选：`NPM_TOKEN`
 
 不想用 OIDC 时，用 granular token：npmjs.com → **Access Tokens** → **Generate New Token** → **Granular Access Token**，权限只给本包的 **Read and write**；然后仓库 **Settings → Secrets and variables → Actions → New repository secret**，名字 `NPM_TOKEN`。最后把 `Publish to npm` 步骤改成：
