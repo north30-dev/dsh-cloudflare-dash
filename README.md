@@ -153,18 +153,35 @@ git push origin v0.5.0
 
 workflow 依次做：语法检查 → 清单一致性 → 全部单测 → 重建 `dist/client.js` 并比对（漂移就失败）→ 校验 tag 与 `package.json` 版本一致 → `npm publish --provenance` → 建 GitHub Release（自动生成 notes）。
 
-### 配置 `NPM_TOKEN`（一次性）
+### 认证：Trusted Publisher（当前方式）
 
-1. 打开 npmjs.com → **Access Tokens** → **Generate New Token** → 选 **Granular Access Token**；
-2. 权限只给 `dsh-cloudflare-dash` 的 **Read and write**，有效期建议 90 天（到期要换）；
-3. 复制生成的 token（只显示一次）；
-4. GitHub 仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，名字填 `NPM_TOKEN`，值粘贴 token。
+在 npmjs.com 的包设置里配置 **Trusted Publisher**：
 
-> 用 **Classic** token 时必须选 `Automation` 类型，否则开了 2FA 的账号在 CI 里发布会因缺少 OTP 失败。
+| 字段 | 值 |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization or user | `north30-dev` |
+| Repository | `dsh-cloudflare-dash` |
+| Workflow filename | `release.yml`（只要文件名，必须位于 `.github/workflows/`） |
+| Environment name | 留空（workflow 未声明 environment） |
+| Allowed actions | 勾 **Allow npm publish** |
 
-### 或者不用 token（推荐）
+配好之后**不需要任何 secret**：`.github/workflows/release.yml` 用 `id-token: write` 换取 OIDC 令牌，npm 侧校验仓库与 workflow 文件名后允许发布，并自动带 provenance。
 
-在 npmjs.com 的包设置里配置 **Trusted Publisher**：GitHub Actions / 仓库 `north30-dev/dsh-cloudflare-dash` / workflow `release.yml`。然后把 workflow 中 `Publish to npm` 步骤的 `env:` 两行删掉——npm 会通过 OIDC 认证，不存长期密钥，也自动带 provenance。
+⚠️ 这个绑定**创建后不能修改**，删了才能重建——提交前核对一遍 `north30-dev` / `dsh-cloudflare-dash` / `release.yml` 三个字符串。
+
+### 备选：`NPM_TOKEN`
+
+不想用 OIDC 时，用 granular token：npmjs.com → **Access Tokens** → **Generate New Token** → **Granular Access Token**，权限只给本包的 **Read and write**；然后仓库 **Settings → Secrets and variables → Actions → New repository secret**，名字 `NPM_TOKEN`。最后把 `Publish to npm` 步骤改成：
+
+```yaml
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+> 用 Classic token 必须选 `Automation` 类型，否则开了 2FA 的账号在 CI 里会因缺少 OTP 失败。
 
 ### 用户怎么升级
 

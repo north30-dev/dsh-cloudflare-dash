@@ -25,9 +25,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+          # No `registry-url`: it writes an .npmrc with
+          # `_authToken=${NODE_AUTH_TOKEN}`, and with trusted publishing there is
+          # no token, so npm would fail to expand it. The default registry is
+          # already registry.npmjs.org.
 
-      # npm 11 is what knows about trusted publishing and provenance formats.
+      # Trusted publishing needs npm >= 11.5; node 22 ships npm 10.
       - name: Use a current npm
         run: npm install -g npm@^11
 
@@ -66,13 +69,10 @@ jobs:
             exit 1
           fi
 
-      # NPM_TOKEN is a granular access token with read+write on this package.
-      # With npm trusted publishing configured instead, delete `env:` below and
-      # npm authenticates through the OIDC token granted above.
+      # Authenticates through the OIDC token granted above: the package has a
+      # trusted publisher bound to this repository and this workflow filename.
       - name: Publish to npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: GitHub Release
         run: gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}" --verify-tag
