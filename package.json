@@ -44,7 +44,7 @@
   ],
   "scripts": {
     "build": "node scripts/build-client.mjs",
-    "test": "node tests/sampling.mjs && node tests/slice-window.mjs && node tests/state.mjs"
+    "test": "node tests/query-shape.mjs && node tests/sampling.mjs && node tests/slice-window.mjs && node tests/state.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

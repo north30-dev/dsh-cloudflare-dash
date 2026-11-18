@@ -61,7 +61,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 | `src/host/state.js` | 非机密状态：Account ID、代理偏好、上次验证快照（`accounts`/`rumSites`/`verifiedAt`），存 `$DSH_HOME/cloudflare-dash/state.json` |
 | `src/client/` | 浏览器侧：`index.jsx` 注册、`app.jsx` 控制器、`overview.jsx` 看板、`settings.jsx` 配置、`chart.jsx`、`format.js`、`api.js`、`locale.js`、`styles.css` |
 | `dist/client.js` | 构建产物（提交） |
-| `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）、`tests/state.mjs`（验证快照读写，用临时 `DSH_HOME`）。`pnpm test` 跑全部 |
+| `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）、`tests/query-shape.mjs`（bot 过滤子句 + Top 榜合并）、`tests/state.mjs`（验证快照读写，用临时 `DSH_HOME`）。`pnpm test` 跑全部 |
 
 ## 硬性约束
 
@@ -87,6 +87,12 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - RUM 数据集：`rumPageloadEventsAdaptiveGroups`（`count`、`sum.visits`、维度 `datetimeHour`/`date`/`requestPath`/`refererHost`/`countryName`/`userAgentBrowser`/`deviceType`/`userAgentOS`）、`rumWebVitalsEventsAdaptiveGroups`（good/needs/poor + P75 分位数）、`rumPerformanceEventsAdaptiveGroups`（`quantiles` 里的 `pageLoadTimeP75` / `dnsTimeP75` / `connectionTimeP75` / `tlsTimeP75` / `requestTimeP75` / `responseTimeP75` / `pageRenderTimeP75` / `firstPaintP75` / `firstContentfulPaintP75`）。
 - **Core Web Vitals 与加载性能的时长单位都是微秒**（`1212000` → 1.212 s），展示前除以 1000；CLS 是无量纲比值。
 - 查询统一带 `bot: 0`，与官网口径对齐；时间桶按 UTC 取回，前端按本地时区格式化。
+- **bot 开关**：`botFilter(bots)` 只在 `bots === 'all'` 时返回空串（即去掉过滤）——判 `'all'` 而不是判 `'exclude'`，这样调用方传错值也只会退化成「排除 bot」，不会静默改变数字含义。要点：
+  - `vitals` / `performance` 两个数据集**永远** `bot: 0`。爬虫没有 Core Web Vital，混进去的 P75 不是「另一口径」而是噪音；`buildSliceQuery` 里因此有两个 filter 字符串（`current` 与 `humans`）。
+  - 当前窗口与上一周期必须用**同一个** `bots` 值，否则环比是拿「含 bot 的本期」比「排除 bot 的上期」。
+  - 缓存键必须带上 `bots`（`账户:站点:范围:bots`），否则切换开关会命中另一模式的结果。
+  - `bot: 1` 语法合法（实测不报错），但很多站点返回空：RUM 只统计执行了 JS 的访问，爬虫通常不会。
+- 每个维度每个切片取 **20 行**（`TOP_LIMIT`），面板默认显示 6 行、点「展开全部」看全；`mergeTop` 已导出，`tests/query-shape.mjs` 钉住合并、排序、去空名和 20 行上限。
 - RUM **没有带宽/字节指标**，「Data served」无法复现，禁止编造。
 - RUM 聚合是 **ABR 采样**，而且**窗口越长分辨率越低**：一次 30 天查询实测只回 8 天里带流量的 2 天、数值全是 10 的倍数，同一批日期按 7 天查就完整。所以 30d 用 `RANGES['30d'].chunkMs` **按周切片**，切片并发查询后：总量/趋势/Top 榜相加合并（精确）。加长范围时沿用这个模式，不要单发一个长窗口聚合。
 - **上一周期必须单独开一套切片网格**：`sliceWindow(now - 2*ms, now - ms, chunkMs)`。30 天不是 7 的整数倍，拿当前窗口那套网格去凑上一周期，会有一个切片横跨两个周期（2 天属于本期、5 天属于上期），切片的数字无法归属。
@@ -99,7 +105,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
   - `known: false`（没有 confidence 块）= 未知，**不能**当成 exact 展示。
 - 概览 payload 还带 `cached` / `cacheAgeMs` / `cacheTtlMs`（缓存命中时按实际年龄算），面板脚注用它显示「缓存 · 42 秒前」；不要把 age 写进缓存的 payload 里，否则会冻结在生成时刻。
 - `confidence.count.isValid` **不能当采样标志**：实测无采样的 7d 窗口也返回 `isValid: false`，区间还退化成 `lower === upper === estimate`。判采样只看 `sampleSize < estimate`。
-- 概览结果在 Host 内存里按 `账户:站点:范围` 缓存（24h 60s / 7d 120s / 30d 300s）；手动刷新传 `fresh=1` 绕过缓存，Token 变更时清空缓存。
+- 概览结果在 Host 内存里按 `账户:站点:范围:bots` 缓存（24h 60s / 7d 120s / 30d 300s）；手动刷新传 `fresh=1` 绕过缓存，Token 变更时清空缓存。
 - **`GET /status` 的验证语义**：`lastAccess`/`verifiedAt` 是进程内变量，重启即失效；之前这导致设置页的「可见账户 / Web Analytics 站点」在每次重启后都显示 `—`。现在验证结果会以**非机密快照**存进 `state.json` 的 `access`，并且：
   - 响应里带了快照但本进程尚未验证 → 加 `verifiedStale: true`，时间戳是**上一次运行**的；
   - 完全没有任何信息（首次、或快照被删）且 Token 已配置 → 懒验证一次；
@@ -139,4 +145,6 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，`when` 门控，已用真实数据端到端验证）
 - ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
 - ✅ M6 采样透明化：分位数改为「每个切片自带、取最新有样本的那片」并标注窗口；上一周期独立切片网格，环比精确；`confidence.count.sampleSize` 判断采样，命中时面板顶部提示（`summarizeSampling` + `tests/sampling.mjs`）
+- ✅ M7 视角控制：Top 榜每维度取 20 行、默认显示 6 行可展开（`mergeTop` + `tests/query-shape.mjs`）；bot 口径开关（`botFilter`，只影响总量/趋势/榜单/环比，缓存键带上 `bots`）
+- ⬜ 导出当前视图（CSV）
 - ⬜ 发布：npm 包、GitHub Release、收录到插件目录

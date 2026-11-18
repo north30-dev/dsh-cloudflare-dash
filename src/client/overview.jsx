@@ -6,6 +6,9 @@ import { fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
 
 const RANGE_OPTIONS = ['24h', '7d', '30d']
 
+/** Rows shown in a list card before "show all" is clicked. */
+const LIST_PREVIEW = 6
+
 /**
  * MM-DD for an ISO instant, in the viewer's time zone.
  * @param {string | undefined} iso
@@ -56,6 +59,9 @@ export function Overview({ t, proxy, onOpenSettings }) {
   const [sites, setSites] = useState([])
   const [siteTag, setSiteTag] = useState('')
   const [range, setRange] = useState('7d')
+  // 'exclude' is the Cloudflare dashboard default; 'all' folds crawlers into
+  // traffic, the six lists and the deltas, never into Core Web Vitals.
+  const [bots, setBots] = useState('exclude')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -88,7 +94,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
     if (siteTag === '') return
     setLoading(true)
     setError(null)
-    const params = [`siteTag=${encodeURIComponent(siteTag)}`, `range=${range}`]
+    const params = [`siteTag=${encodeURIComponent(siteTag)}`, `range=${range}`, `bots=${bots}`]
     if (fresh) params.push('fresh=1')
     if (proxyArgs !== '') params.push(proxyArgs)
     callApi(`overview?${params.join('&')}`)
@@ -100,7 +106,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
         setError(loadError.message)
         setLoading(false)
       })
-  }, [siteTag, range, proxyArgs])
+  }, [siteTag, range, bots, proxyArgs])
 
   useEffect(() => {
     load(false)
@@ -225,6 +231,14 @@ export function Overview({ t, proxy, onOpenSettings }) {
               </option>
             ))}
           </select>
+          <label className="cfd-check">
+            <input
+              type="checkbox"
+              checked={bots === 'all'}
+              onChange={(event) => setBots(event.target.checked ? 'all' : 'exclude')}
+            />
+            {t('overview.bots')}
+          </label>
           <button className="cfd-btn" disabled={loading} onClick={() => load(true)}>
             {loading ? t('overview.refreshing') : t('overview.refresh')}
           </button>
@@ -336,6 +350,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
 
       <footer className="cfd-foot">
         {t('overview.footer')}
+        {` · ${bots === 'all' ? t('overview.footer.botsIncluded') : t('overview.footer.botsExcluded')}`}
         {data === null ? '' : ` · ${new Date(data.generatedAt).toLocaleTimeString()}`}
         {data === null || data.slices < 2 ? '' : ` · ${data.slices} ${t('overview.slices')}`}
         {data === null
@@ -374,9 +389,12 @@ function KpiCard({ label, value, delta, deltaLabel, hint }) {
  * @param {{ title: string, rows: Array<{ name: string, visits: number, pageLoads: number }>, t: (key: string) => string, directLabel?: string }} props
  */
 function ListCard({ title, rows, t, directLabel }) {
-  // The Host caps the query at 6 rows; the card scrolls instead of cropping.
-  const visible = rows
-  const max = Math.max(1, ...visible.map((row) => row.pageLoads))
+  const [expanded, setExpanded] = useState(false)
+  // The Host fetches twenty rows per dimension; six are shown until asked for,
+  // which keeps a card readable without hiding the long tail from a click.
+  const visible = expanded ? rows : rows.slice(0, LIST_PREVIEW)
+  // Scale the bars against the whole list so expanding does not rescale them.
+  const max = Math.max(1, ...rows.map((row) => row.pageLoads))
   return (
     <div className="cfd-card">
       <div className="cfd-card-head">
@@ -386,27 +404,34 @@ function ListCard({ title, rows, t, directLabel }) {
       {visible.length === 0 ? (
         <p className="cfd-hint">{t('list.empty')}</p>
       ) : (
-        <ul className="cfd-list">
-          {visible.map((row) => {
-            const name = row.name === '' ? (directLabel ?? t('list.direct')) : row.name
-            return (
-              <li className="cfd-list-row" key={`${name}-${row.name === '' ? 'direct' : ''}`}>
-                <div className="cfd-list-head">
-                  <span className="cfd-list-name" title={name}>
-                    {name}
-                  </span>
-                  <span className="cfd-list-value">{fmtInt(row.pageLoads)}</span>
-                </div>
-                <div className="cfd-bar">
-                  <div className="cfd-bar-fill" style={{ width: `${Math.max(3, (row.pageLoads / max) * 100)}%` }} />
-                </div>
-                <div className="cfd-list-sub">
-                  {fmtInt(row.visits)} {t('list.visits')}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+        <>
+          <ul className="cfd-list">
+            {visible.map((row) => {
+              const name = row.name === '' ? (directLabel ?? t('list.direct')) : row.name
+              return (
+                <li className="cfd-list-row" key={`${name}-${row.name === '' ? 'direct' : ''}`}>
+                  <div className="cfd-list-head">
+                    <span className="cfd-list-name" title={name}>
+                      {name}
+                    </span>
+                    <span className="cfd-list-value">{fmtInt(row.pageLoads)}</span>
+                  </div>
+                  <div className="cfd-bar">
+                    <div className="cfd-bar-fill" style={{ width: `${Math.max(3, (row.pageLoads / max) * 100)}%` }} />
+                  </div>
+                  <div className="cfd-list-sub">
+                    {fmtInt(row.visits)} {t('list.visits')}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+          {rows.length <= LIST_PREVIEW ? null : (
+            <button type="button" className="cfd-list-more" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? t('list.collapse') : `${t('list.expand')} · ${rows.length}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   )

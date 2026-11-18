@@ -375,8 +375,11 @@ export function registerRoutes(ctx) {
           if (RANGES[range] === undefined) throw new HttpError('bad-request', '不支持的时间范围')
           const siteTag = url.searchParams.get('siteTag') ?? ''
           const fresh = url.searchParams.get('fresh') === '1'
+          // `all` includes bot traffic; every other value keeps the dashboard
+          // default, so a typo can never quietly change what a number means.
+          const bots = url.searchParams.get('bots') === 'all' ? 'all' : 'exclude'
           const context = await dataContext(request)
-          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range, fresh }))
+          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range, fresh, bots }))
         } catch (error) {
           sendFailure(response, error)
         }

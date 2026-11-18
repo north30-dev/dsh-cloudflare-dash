@@ -18,7 +18,15 @@
 import { CloudflareError, callApi, graphql } from './cloudflare.js'
 
 const SITE_CACHE_MS = 60_000
-const TOP_LIMIT = 6
+
+/**
+ * Rows fetched per dimension, per slice.
+ *
+ * Twenty rather than six: the panel shows six and expands on demand, and a
+ * wider per-slice cut keeps the merged ranking honest for a name that sits just
+ * outside the short list in every slice but leads on the sum.
+ */
+const TOP_LIMIT = 20
 
 /** How long one dashboard payload may be served from memory before re-querying. */
 const OVERVIEW_TTL_MS = { '24h': 60_000, '7d': 120_000, '30d': 300_000 }
@@ -55,6 +63,20 @@ export const RANGES = {
  */
 function num(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/**
+ * The `bot` clause for a filter, or an empty string when bots are included.
+ *
+ * `all` is the only value that includes bots; anything else keeps them out,
+ * which is the default the Cloudflare dashboard shows. Comparing against
+ * `'all'` rather than comparing against `'exclude'` means a bad caller cannot
+ * silently change what the numbers mean.
+ * @param {unknown} bots
+ * @returns {string}
+ */
+export function botFilter(bots) {
+  return bots === 'all' ? '' : ', bot: 0'
 }
 
 /**
@@ -229,11 +251,15 @@ function performanceOf(row, window) {
  *
  * Values are validated (hex tags, ISO instants) before interpolation, so the
  * document never carries caller-controlled text.
- * @param {{ accountTag: string, siteTag: string, from: string, to: string, dimension: string, orderBy: string }} input
+ * @param {{ accountTag: string, siteTag: string, from: string, to: string, dimension: string, orderBy: string, bots?: unknown }} input
  * @returns {string}
  */
 function buildSliceQuery(input) {
-  const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
+  // Traffic and the six lists follow the bot switch; the quantile datasets never
+  // do. A crawler does not have a Core Web Vital, so folding bots into a P75
+  // would make the fast/slow split meaningless rather than merely different.
+  const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}"${botFilter(input.bots)} }`
+  const humans = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
   const top = (alias, dimension) =>
     `${alias}: rumPageloadEventsAdaptiveGroups(limit: ${TOP_LIMIT}, orderBy: [count_DESC], ${current}) { count sum { visits } dimensions { ${dimension} } }`
   return `query {
@@ -250,13 +276,13 @@ function buildSliceQuery(input) {
     ${top('browsers', 'userAgentBrowser')}
     ${top('devices', 'deviceType')}
     ${top('os', 'userAgentOS')}
-    vitals: rumWebVitalsEventsAdaptiveGroups(limit: 1, ${current}) {
+    vitals: rumWebVitalsEventsAdaptiveGroups(limit: 1, ${humans}) {
       count
       sum { visits lcpGood lcpNeedsImprovement lcpPoor lcpTotal inpGood inpNeedsImprovement inpPoor inpTotal clsGood clsNeedsImprovement clsPoor clsTotal fcpGood fcpNeedsImprovement fcpPoor fcpTotal ttfbGood ttfbNeedsImprovement ttfbPoor ttfbTotal }
       quantiles { largestContentfulPaintP75 interactionToNextPaintP75 cumulativeLayoutShiftP75 firstContentfulPaintP75 timeToFirstByteP75 }
       confidence(level: 0.95) { count { estimate sampleSize } }
     }
-    performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${current}) {
+    performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${humans}) {
       count
       quantiles { pageLoadTimeP75 dnsTimeP75 connectionTimeP75 tlsTimeP75 requestTimeP75 responseTimeP75 pageRenderTimeP75 firstPaintP75 firstContentfulPaintP75 }
       confidence(level: 0.95) { count { estimate sampleSize } }
@@ -269,11 +295,14 @@ function buildSliceQuery(input) {
  * Build the document for one slice of the comparison window. Only the totals are
  * needed: the previous period feeds a delta, not a chart, and the six top lists
  * would triple the payload for numbers nobody reads.
- * @param {{ accountTag: string, siteTag: string, from: string, to: string }} input
+ *
+ * The bot clause must match the current window's, or the delta ends up comparing
+ * a range that includes crawlers against one that does not.
+ * @param {{ accountTag: string, siteTag: string, from: string, to: string, bots?: unknown }} input
  * @returns {string}
  */
 function buildPreviousSliceQuery(input) {
-  const previous = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
+  const previous = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}"${botFilter(input.bots)} }`
   return `query {
   viewer { accounts(filter: { accountTag: "${input.accountTag}" }) {
     totals: rumPageloadEventsAdaptiveGroups(limit: 1, ${previous}) {
@@ -324,15 +353,18 @@ export function sliceWindow(fromMs, toMs, chunkMs) {
  * rows, so a name that stays below the cut in every slice can miss the merged
  * list; the panel wants a short list, and the alternative — unbounded group
  * sizes — is what makes Cloudflare lower the resolution in the first place.
+ *
+ * Exported for the unit tests: the merge is the part that decides whether the
+ * ranking the user sees is the one the numbers imply.
  * @param {any[]} accounts
  * @param {string} alias
  * @param {string} dimension
  * @param {boolean} keepBlank whether a blank dimension value is a real row (direct referrers)
  * @returns {Array<{ name: string, visits: number, pageLoads: number }>}
  */
-function mergeTop(accounts, alias, dimension, keepBlank) {
+export function mergeTop(accounts, alias, dimension, keepBlank) {
   const merged = new Map()
-  for (const account of accounts) {
+  for (const account of Array.isArray(accounts) ? accounts : []) {
     const rows = Array.isArray(account?.[alias]) ? account[alias] : []
     for (const row of rows) {
       const entry = rowOf(row, dimension)
@@ -360,6 +392,7 @@ function mergeTop(accounts, alias, dimension, keepBlank) {
  *   token: string,
  *   proxy?: { host: string, port: number },
  *   fresh?: boolean,
+ *   bots?: unknown,
  * }} options
  * @returns {Promise<object>}
  */
@@ -368,7 +401,10 @@ export async function fetchOverview(options) {
   if (spec === undefined) throw new CloudflareError('bad-range', '不支持的时间范围')
   if (!/^[0-9a-f]{32}$/i.test(options.siteTag)) throw new CloudflareError('bad-site', 'siteTag 不合法')
 
-  const cacheKey = `${options.accountId}:${options.siteTag}:${options.range}`
+  // Including bots changes every summable number, so it belongs in the cache
+  // key: without it a toggle would be served the other mode's payload.
+  const bots = options.bots === 'all' ? 'all' : 'exclude'
+  const cacheKey = `${options.accountId}:${options.siteTag}:${options.range}:${bots}`
   const ttlMs = OVERVIEW_TTL_MS[options.range]
   const cached = overviewCache.get(cacheKey)
   if (options.fresh !== true && cached !== undefined && Date.now() - cached.at < ttlMs) {
@@ -406,10 +442,12 @@ export async function fetchOverview(options) {
       ...bounds(slice),
       dimension: spec.dimension,
       orderBy: spec.orderBy,
+      bots,
     }), transport))),
     Promise.all(previousSlices.map((slice) => graphql(buildPreviousSliceQuery({
       ...filter,
       ...bounds(slice),
+      bots,
     }), transport))),
   ])
 
@@ -467,6 +505,7 @@ export async function fetchOverview(options) {
   const payload = {
     site: { siteTag: site.siteTag, host: site.host, enabled: site.enabled },
     range: options.range,
+    bots,
     window,
     slices: slices.length,
     totals,

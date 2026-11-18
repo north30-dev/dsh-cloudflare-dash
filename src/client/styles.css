@@ -414,6 +414,35 @@
   list-style: none;
 }
 
+.cfd-list-more {
+  margin-top: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+
+.cfd-list-more:hover {
+  text-decoration: underline;
+}
+
+.cfd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cfd-check input {
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
 .cfd-list-head {
   display: flex;
   justify-content: space-between;
