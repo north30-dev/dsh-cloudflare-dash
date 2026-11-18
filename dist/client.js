@@ -277,6 +277,14 @@ function dayLabel(iso) {
 function spanLabel(window2) {
   return `${dayLabel(window2.from)} \u2192 ${dayLabel(window2.to)}`;
 }
+function ageText(ms, t) {
+  const seconds = Math.max(0, Math.round((typeof ms === "number" && Number.isFinite(ms) ? ms : 0) / 1e3));
+  if (seconds < 90) return `${seconds} ${t("unit.secondsAgo")}`;
+  return `${Math.round(seconds / 60)} ${t("unit.minutesAgo")}`;
+}
+function sampledLabel(sampling, t) {
+  return `${t("sampling.estimate")} ${fmtInt(sampling.samples)}/${fmtInt(sampling.estimated)}`;
+}
 function Overview({ t, proxy, onOpenSettings }) {
   const [sites, setSites] = (0, import_react2.useState)([]);
   const [siteTag, setSiteTag] = (0, import_react2.useState)("");
@@ -368,6 +376,7 @@ function Overview({ t, proxy, onOpenSettings }) {
   const loadsDelta = fmtDelta(totals.pageLoads, previous.pageLoads);
   const sampling = data?.sampling?.current;
   const sampled = sampling?.sampled === true;
+  const previousSampled = data?.sampling?.previous?.sampled === true;
   const offRange = (block) => {
     if (block === null || block.window === void 0 || data === null) return false;
     return block.window.from !== data.window.from || block.window.to !== data.window.to;
@@ -413,7 +422,7 @@ function Overview({ t, proxy, onOpenSettings }) {
       value: fmtInt(top.referrers.filter((row) => row.name !== "").length),
       hint: t("kpi.referrersHint")
     }
-  )), sampled ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-notice" }, t("sampling.warning"), ` \xB7 ${t("sampling.samples")} ${fmtInt(sampling.samples)} / ${t("sampling.estimated")} ${fmtInt(sampling.estimated)}`) : null, /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("chart.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("chart.sub"))), /* @__PURE__ */ import_react2.default.createElement(
+  )), sampled || previousSampled ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-notice" }, sampled ? /* @__PURE__ */ import_react2.default.createElement(import_react2.default.Fragment, null, t("sampling.warning"), ` \xB7 ${t("sampling.samples")} ${fmtInt(sampling.samples)} / ${t("sampling.estimated")} ${fmtInt(sampling.estimated)}`) : null, sampled && previousSampled ? " \xB7 " : "", previousSampled ? t("sampling.previousNote") : "") : null, /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("chart.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("chart.sub"))), /* @__PURE__ */ import_react2.default.createElement(
     TrendChart,
     {
       points,
@@ -421,7 +430,7 @@ function Overview({ t, proxy, onOpenSettings }) {
       note: spanNote,
       labels: { visits: t("chart.visits"), pageLoads: t("chart.pageLoads"), empty: t("chart.empty") }
     }
-  )), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-grid-2" }, /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.paths"), rows: top.paths, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.referrers"), rows: top.referrers, t, directLabel: t("list.direct") }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.countries"), rows: top.countries, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.browsers"), rows: top.browsers, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.devices"), rows: top.devices, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.os"), rows: top.os, t })), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("vitals.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("vitals.sub"), vitalsPartial ? ` \xB7 ${t("window.label")} ${spanLabel(vitals.window)}` : "")), vitals === null ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-hint" }, t("vitals.empty")) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vitals" }, /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "LCP", value: fmtDuration(vitals.lcp.p75), metric: vitals.lcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "INP", value: fmtDuration(vitals.inp.p75), metric: vitals.inp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "CLS", value: fmtRatio(vitals.cls.p75), metric: vitals.cls, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "FCP", value: fmtDuration(vitals.fcp.p75), metric: vitals.fcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "TTFB", value: fmtDuration(vitals.ttfb.p75), metric: vitals.ttfb, t })), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-foot" }, t("vitals.note"), vitalsPartial ? ` ${t("vitals.note.partial")}` : "")), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("perf.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("perf.sub"), performancePartial ? ` \xB7 ${t("window.label")} ${spanLabel(performance.window)}` : "")), /* @__PURE__ */ import_react2.default.createElement(PerformanceCard, { performance, t, partial: performancePartial })), /* @__PURE__ */ import_react2.default.createElement("footer", { className: "cfd-foot" }, t("overview.footer"), data === null ? "" : ` \xB7 ${new Date(data.generatedAt).toLocaleTimeString()}`, data === null || data.slices < 2 ? "" : ` \xB7 ${data.slices} ${t("overview.slices")}`, data?.cached === true ? ` \xB7 ${t("overview.cached")}` : ""));
+  )), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-grid-2" }, /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.paths"), rows: top.paths, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.referrers"), rows: top.referrers, t, directLabel: t("list.direct") }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.countries"), rows: top.countries, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.browsers"), rows: top.browsers, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.devices"), rows: top.devices, t }), /* @__PURE__ */ import_react2.default.createElement(ListCard, { title: t("list.os"), rows: top.os, t })), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("vitals.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("vitals.sub"), vitalsPartial ? ` \xB7 ${t("window.label")} ${spanLabel(vitals.window)}` : "", vitals?.sampling?.sampled === true ? ` \xB7 ${sampledLabel(vitals.sampling, t)}` : "")), vitals === null ? /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-hint" }, t("vitals.empty")) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vitals" }, /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "LCP", value: fmtDuration(vitals.lcp.p75), metric: vitals.lcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "INP", value: fmtDuration(vitals.inp.p75), metric: vitals.inp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "CLS", value: fmtRatio(vitals.cls.p75), metric: vitals.cls, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "FCP", value: fmtDuration(vitals.fcp.p75), metric: vitals.fcp, t }), /* @__PURE__ */ import_react2.default.createElement(VitalTile, { label: "TTFB", value: fmtDuration(vitals.ttfb.p75), metric: vitals.ttfb, t })), /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-foot" }, t("vitals.note"), vitalsPartial ? ` ${t("vitals.note.partial")}` : "")), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-card" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-card-head" }, /* @__PURE__ */ import_react2.default.createElement("h3", { className: "cfd-card-title" }, t("perf.title")), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-card-sub" }, t("perf.sub"), performancePartial ? ` \xB7 ${t("window.label")} ${spanLabel(performance.window)}` : "", performance?.sampling?.sampled === true ? ` \xB7 ${sampledLabel(performance.sampling, t)}` : "")), /* @__PURE__ */ import_react2.default.createElement(PerformanceCard, { performance, t, partial: performancePartial })), /* @__PURE__ */ import_react2.default.createElement("footer", { className: "cfd-foot" }, t("overview.footer"), data === null ? "" : ` \xB7 ${new Date(data.generatedAt).toLocaleTimeString()}`, data === null || data.slices < 2 ? "" : ` \xB7 ${data.slices} ${t("overview.slices")}`, data === null ? "" : data.cached === true ? ` \xB7 ${t("overview.cached")} \xB7 ${ageText(data.cacheAgeMs, t)}` : ` \xB7 ${t("overview.justNow")}`));
 }
 function KpiCard({ label, value, delta, deltaLabel, hint }) {
   const hasDelta = delta !== void 0;
@@ -796,11 +805,16 @@ var zh = {
   "vitals.note.partial": "\u5206\u4F4D\u6570\u4E0D\u53EF\u8DE8\u65F6\u95F4\u7A97\u76F8\u52A0\uFF0C\u957F\u8303\u56F4\u4E0B\u5C55\u793A\u6700\u8FD1\u4E00\u6BB5\u6709\u6837\u672C\u7684\u7A97\u53E3\u3002",
   "settings.back": "\u8FD4\u56DE\u770B\u677F",
   "overview.cached": "\u7F13\u5B58",
+  "overview.justNow": "\u521A\u521A\u66F4\u65B0",
   "overview.slices": "\u6BB5\u5207\u7247\u67E5\u8BE2",
+  "unit.secondsAgo": "\u79D2\u524D",
+  "unit.minutesAgo": "\u5206\u949F\u524D",
   "window.label": "\u7A97\u53E3",
-  "sampling.warning": "\u8BE5\u8303\u56F4\u7531 Cloudflare \u91C7\u6837\u4F30\u7B97\uFF0C\u6570\u5B57\u662F\u63A8\u7B97\u503C",
+  "sampling.warning": "\u8BE5\u8303\u56F4\u542B Cloudflare \u91C7\u6837\u4F30\u7B97\uFF1A\u90E8\u5206\u9875\u9762\u52A0\u8F7D\u6570\u662F\u63A8\u7B97\u503C",
   "sampling.samples": "\u5B9E\u9645\u6837\u672C",
   "sampling.estimated": "\u4F30\u7B97\u9875\u9762\u52A0\u8F7D",
+  "sampling.estimate": "\u91C7\u6837\u4F30\u8BA1",
+  "sampling.previousNote": "\u73AF\u6BD4\u57FA\u4E8E\u91C7\u6837\u4F30\u7B97\u503C\uFF0C\u4EC5\u4F9B\u65B9\u5411\u53C2\u8003",
   "perf.title": "\u52A0\u8F7D\u6027\u80FD",
   "perf.sub": "P75 \u5206\u4F4D\u6570",
   "perf.total": "\u9875\u9762\u52A0\u8F7D\u603B\u65F6\u957F",
@@ -912,11 +926,16 @@ var en = {
   "vitals.note.partial": "A P75 cannot be summed across windows, so a long range shows the newest window that has samples.",
   "settings.back": "Back to dashboard",
   "overview.cached": "cached",
+  "overview.justNow": "just updated",
   "overview.slices": "slices",
+  "unit.secondsAgo": "s ago",
+  "unit.minutesAgo": "min ago",
   "window.label": "window",
-  "sampling.warning": "Cloudflare sampled this range; these numbers are extrapolated",
+  "sampling.warning": "This range includes Cloudflare sampling estimates: some page loads are extrapolated",
   "sampling.samples": "samples",
   "sampling.estimated": "estimated page loads",
+  "sampling.estimate": "sampled",
+  "sampling.previousNote": "the previous period is a sampling estimate, so treat the delta as directional",
   "perf.title": "Loading performance",
   "perf.sub": "P75 quantiles",
   "perf.total": "Total page load",

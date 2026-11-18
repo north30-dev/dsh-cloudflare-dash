@@ -156,6 +156,16 @@ function samplingNote(sampling) {
   return `sampled: ${int(sampling.samples)} samples for ${int(sampling.estimated)} page loads`
 }
 
+/**
+ * Whether a single dataset in the report was extrapolated, and from how much.
+ * @param {{ sampled: boolean, samples: number, estimated: number } | undefined} sampling
+ * @returns {string}
+ */
+function sampledNote(sampling) {
+  if (sampling === undefined || sampling.sampled !== true) return ''
+  return `, sampled: ${int(sampling.samples)} of ${int(sampling.estimated)}`
+}
+
 /** Top lists, in the order the panel shows them. */
 const LISTS = [
   ['paths', 'Top pages'],
@@ -249,7 +259,7 @@ function overviewReport(data) {
   if (data.vitals === null || data.vitals === undefined) {
     lines.push('Core Web Vitals: (no rows)')
   } else {
-    lines.push(`Core Web Vitals (P75, ${int(data.vitals.samples)} samples, field data${windowNote(data.vitals.window, data.window)})`)
+    lines.push(`Core Web Vitals (P75, ${int(data.vitals.samples)} samples, field data${windowNote(data.vitals.window, data.window)}${sampledNote(data.vitals.sampling)})`)
     for (const [key, label] of VITALS) {
       const metric = data.vitals[key]
       if (metric === undefined) continue
@@ -270,7 +280,7 @@ function overviewReport(data) {
       .filter(([key]) => data.performance.phases?.[key] !== null && data.performance.phases?.[key] !== undefined)
       .map(([key, label]) => `${label} ${duration(data.performance.phases[key])}`)
       .join(' · ')
-    lines.push(`Loading phases (P75, page load ${duration(data.performance.pageLoad)}, ${int(data.performance.samples)} samples${windowNote(data.performance.window, data.window)})`)
+    lines.push(`Loading phases (P75, page load ${duration(data.performance.pageLoad)}, ${int(data.performance.samples)} samples${windowNote(data.performance.window, data.window)}${sampledNote(data.performance.sampling)})`)
     lines.push(phases === '' ? '(no phase rows)' : phases)
   }
 

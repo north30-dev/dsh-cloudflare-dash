@@ -28,6 +28,28 @@ function spanLabel(window) {
 }
 
 /**
+ * How old a cached payload is, in words.
+ * @param {unknown} ms
+ * @param {(key: string) => string} t
+ * @returns {string}
+ */
+function ageText(ms, t) {
+  const seconds = Math.max(0, Math.round((typeof ms === 'number' && Number.isFinite(ms) ? ms : 0) / 1000))
+  if (seconds < 90) return `${seconds} ${t('unit.secondsAgo')}`
+  return `${Math.round(seconds / 60)} ${t('unit.minutesAgo')}`
+}
+
+/**
+ * Mark a card whose numbers were extrapolated from a sample.
+ * @param {{ samples: number, estimated: number }} sampling
+ * @param {(key: string) => string} t
+ * @returns {string}
+ */
+function sampledLabel(sampling, t) {
+  return `${t('sampling.estimate')} ${fmtInt(sampling.samples)}/${fmtInt(sampling.estimated)}`
+}
+
+/**
  * @param {{ t: (key: string) => string, proxy: { enabled: boolean, url: string }, onOpenSettings: () => void }} props
  */
 export function Overview({ t, proxy, onOpenSettings }) {
@@ -166,6 +188,9 @@ export function Overview({ t, proxy, onOpenSettings }) {
   // extrapolation. Both cards say which window they describe.
   const sampling = data?.sampling?.current
   const sampled = sampling?.sampled === true
+  // The comparison period can be extrapolated even when this one is exact, and
+  // a delta computed from an estimate deserves the same warning.
+  const previousSampled = data?.sampling?.previous?.sampled === true
   const offRange = (block) => {
     if (block === null || block.window === undefined || data === null) return false
     return block.window.from !== data.window.from || block.window.to !== data.window.to
@@ -236,10 +261,16 @@ export function Overview({ t, proxy, onOpenSettings }) {
         />
       </section>
 
-      {sampled ? (
+      {sampled || previousSampled ? (
         <p className="cfd-notice">
-          {t('sampling.warning')}
-          {` · ${t('sampling.samples')} ${fmtInt(sampling.samples)} / ${t('sampling.estimated')} ${fmtInt(sampling.estimated)}`}
+          {sampled ? (
+            <>
+              {t('sampling.warning')}
+              {` · ${t('sampling.samples')} ${fmtInt(sampling.samples)} / ${t('sampling.estimated')} ${fmtInt(sampling.estimated)}`}
+            </>
+          ) : null}
+          {sampled && previousSampled ? ' · ' : ''}
+          {previousSampled ? t('sampling.previousNote') : ''}
         </p>
       ) : null}
 
@@ -271,6 +302,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
           <span className="cfd-card-sub">
             {t('vitals.sub')}
             {vitalsPartial ? ` · ${t('window.label')} ${spanLabel(vitals.window)}` : ''}
+            {vitals?.sampling?.sampled === true ? ` · ${sampledLabel(vitals.sampling, t)}` : ''}
           </span>
         </div>
         {vitals === null ? (
@@ -296,6 +328,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
           <span className="cfd-card-sub">
             {t('perf.sub')}
             {performancePartial ? ` · ${t('window.label')} ${spanLabel(performance.window)}` : ''}
+            {performance?.sampling?.sampled === true ? ` · ${sampledLabel(performance.sampling, t)}` : ''}
           </span>
         </div>
         <PerformanceCard performance={performance} t={t} partial={performancePartial} />
@@ -305,7 +338,11 @@ export function Overview({ t, proxy, onOpenSettings }) {
         {t('overview.footer')}
         {data === null ? '' : ` · ${new Date(data.generatedAt).toLocaleTimeString()}`}
         {data === null || data.slices < 2 ? '' : ` · ${data.slices} ${t('overview.slices')}`}
-        {data?.cached === true ? ` · ${t('overview.cached')}` : ''}
+        {data === null
+          ? ''
+          : data.cached === true
+            ? ` · ${t('overview.cached')} · ${ageText(data.cacheAgeMs, t)}`
+            : ` · ${t('overview.justNow')}`}
       </footer>
     </div>
   )

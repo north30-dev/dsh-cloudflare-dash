@@ -93,6 +93,11 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - **分位数（CWV、加载性能）不可相加**：不再走整窗 summary 查询，而是**每个切片自己带 `vitals`/`performance` alias**，取**最新的、`count > 0` 的切片**，并把这个切片的 `window` 一起返回给面板标注。整窗 30 天的 P75 实测是 7 个样本外推出的 70（同一站点 LCP 7.40 s vs 按周 1.42 s），别再用它。
 - `confidence(level: 0.95)` 是**可以**标注采样的：节点上只有 `avg`/`confidence`/`count`/`dimensions`/`sum`，**没有 `sampleInterval`**（请求它返回 `unknown field`），但 `confidence.count` 里有 `{ estimate, lower, upper, sampleSize, isValid }`。`sampleSize` 与 `estimate` 的比值就是采样率：30d 整窗实测 `sampleSize=5 / estimate=50`，7d 切片是 `107 / 107`（无采样），`summarizeSampling` 把所有切片的这两个数加起来。
 - **只查 `confidence.count`**：请求 `confidence.sum.visits` 会让 Cloudflare 把整行返回成 `[]`（实测，无报错），所以 `sum` 的置信区间拿不到，也别试着取。
+- 采样状态有**两个层级**，别混：
+  - `summarizeSampling()` 汇总所有切片的 `totals` → `payload.sampling.current` / `.previous`，驱动面板顶部的提示（总量/趋势/Top 榜、以及环比口径）；
+  - `rowSampling()` 看单个数据集的 `confidence.count` → `payload.vitals.sampling` / `.performance.sampling`，因为分位数只来自**一个**切片，能不能信要单独判断。`confidence.count` 在这两个数据集上实测可用（7d：`58/58`、`70/70`；30d 整窗：`70/7`），行不会被打空。
+  - `known: false`（没有 confidence 块）= 未知，**不能**当成 exact 展示。
+- 概览 payload 还带 `cached` / `cacheAgeMs` / `cacheTtlMs`（缓存命中时按实际年龄算），面板脚注用它显示「缓存 · 42 秒前」；不要把 age 写进缓存的 payload 里，否则会冻结在生成时刻。
 - `confidence.count.isValid` **不能当采样标志**：实测无采样的 7d 窗口也返回 `isValid: false`，区间还退化成 `lower === upper === estimate`。判采样只看 `sampleSize < estimate`。
 - 概览结果在 Host 内存里按 `账户:站点:范围` 缓存（24h 60s / 7d 120s / 30d 300s）；手动刷新传 `fresh=1` 绕过缓存，Token 变更时清空缓存。
 - **`GET /status` 的验证语义**：`lastAccess`/`verifiedAt` 是进程内变量，重启即失效；之前这导致设置页的「可见账户 / Web Analytics 站点」在每次重启后都显示 `—`。现在验证结果会以**非机密快照**存进 `state.json` 的 `access`，并且：

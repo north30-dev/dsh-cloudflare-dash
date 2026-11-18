@@ -10,7 +10,7 @@
  * Run: node tests/sampling.mjs
  */
 import assert from 'node:assert/strict'
-import { summarizeSampling } from '../src/host/analytics.js'
+import { rowSampling, summarizeSampling } from '../src/host/analytics.js'
 
 /** One `totals` row with a confidence block. */
 const row = (estimate, sampleSize) => ({ count: estimate, confidence: { count: { estimate, sampleSize } } })
@@ -64,5 +64,26 @@ assert.equal(partial.sampled, true)
 const nothing = summarizeSampling(undefined)
 assert.equal(nothing.slices, 0)
 assert.equal(nothing.sampled, false)
+
+// --- per-dataset rows (Core Web Vitals, loading phases) ---
+
+// A seven-day slice answered from all of its samples.
+const exactRow = rowSampling({ count: 58, confidence: { count: { estimate: 58, sampleSize: 58 } } })
+assert.deepEqual(exactRow, { known: true, samples: 58, estimated: 58, sampled: false })
+
+// The 30-day window that Cloudflare answered from 7 of 70 samples.
+const sampledRow = rowSampling({ count: 70, confidence: { count: { estimate: 70, sampleSize: 7 } } })
+assert.deepEqual(sampledRow, { known: true, samples: 7, estimated: 70, sampled: true })
+
+// An estimate without a sample size is still an extrapolation, not exact.
+assert.equal(rowSampling({ count: 50, confidence: { count: { estimate: 50 } } }).sampled, true)
+
+// No confidence block: the row's own count twice, and no claim either way.
+for (const row of [{ count: 12 }, {}, undefined, { confidence: {} }]) {
+  const state = rowSampling(row)
+  assert.equal(state.known, false, `known must stay false for ${JSON.stringify(row)}`)
+  assert.equal(state.sampled, false, `sampled must stay false for ${JSON.stringify(row)}`)
+  assert.equal(state.samples, state.estimated)
+}
 
 console.log('sampling: all assertions passed')

@@ -133,6 +133,27 @@ export function summarizeSampling(rows) {
 }
 
 /**
+ * Sampling state of a single dataset row, from its `confidence.count` block.
+ *
+ * `known: false` means Cloudflare gave no usable confidence block — the caller
+ * must not turn that into "exact", only into "nothing to say".
+ * @param {any} row
+ * @returns {{ known: boolean, samples: number, estimated: number, sampled: boolean }}
+ */
+export function rowSampling(row) {
+  const confidence = row?.confidence?.count
+  const estimate = num(confidence?.estimate)
+  const sampleSize = num(confidence?.sampleSize)
+  if (!(estimate > 0)) {
+    // No estimate to compare against: report the row's own count twice rather
+    // than a nonsense 0-of-N.
+    const fallback = num(row?.count)
+    return { known: false, samples: fallback, estimated: fallback, sampled: false }
+  }
+  return { known: true, samples: sampleSize, estimated: estimate, sampled: sampleSize < estimate }
+}
+
+/**
  * Shape the Core Web Vitals dataset.
  * @param {any} row
  * @param {{ from: string, to: string }} window - the slice these quantiles describe.
@@ -155,6 +176,7 @@ function vitalsOf(row, window) {
   return {
     samples: num(row.count),
     visits: num(sum.visits),
+    sampling: rowSampling(row),
     window,
     lcp: metric('lcp', 'largestContentfulPaintP75'),
     inp: metric('inp', 'interactionToNextPaintP75'),
@@ -176,6 +198,7 @@ function performanceOf(row, window) {
   const phase = (key) => (typeof quantiles[key] === 'number' ? quantiles[key] : null)
   return {
     samples: num(row.count),
+    sampling: rowSampling(row),
     window,
     pageLoad: phase('pageLoadTimeP75'),
     phases: {
@@ -231,10 +254,12 @@ function buildSliceQuery(input) {
       count
       sum { visits lcpGood lcpNeedsImprovement lcpPoor lcpTotal inpGood inpNeedsImprovement inpPoor inpTotal clsGood clsNeedsImprovement clsPoor clsTotal fcpGood fcpNeedsImprovement fcpPoor fcpTotal ttfbGood ttfbNeedsImprovement ttfbPoor ttfbTotal }
       quantiles { largestContentfulPaintP75 interactionToNextPaintP75 cumulativeLayoutShiftP75 firstContentfulPaintP75 timeToFirstByteP75 }
+      confidence(level: 0.95) { count { estimate sampleSize } }
     }
     performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${current}) {
       count
       quantiles { pageLoadTimeP75 dnsTimeP75 connectionTimeP75 tlsTimeP75 requestTimeP75 responseTimeP75 pageRenderTimeP75 firstPaintP75 firstContentfulPaintP75 }
+      confidence(level: 0.95) { count { estimate sampleSize } }
     }
   } }
 }`
@@ -344,9 +369,12 @@ export async function fetchOverview(options) {
   if (!/^[0-9a-f]{32}$/i.test(options.siteTag)) throw new CloudflareError('bad-site', 'siteTag 不合法')
 
   const cacheKey = `${options.accountId}:${options.siteTag}:${options.range}`
+  const ttlMs = OVERVIEW_TTL_MS[options.range]
   const cached = overviewCache.get(cacheKey)
-  if (options.fresh !== true && cached !== undefined && Date.now() - cached.at < OVERVIEW_TTL_MS[options.range]) {
-    return { ...cached.payload, cached: true }
+  if (options.fresh !== true && cached !== undefined && Date.now() - cached.at < ttlMs) {
+    // The age travels with the payload: "cached" alone cannot tell a user
+    // whether they are looking at a number from ten seconds or five minutes ago.
+    return { ...cached.payload, cached: true, cacheAgeMs: Date.now() - cached.at, cacheTtlMs: ttlMs }
   }
 
   const sites = await listSites(options)
@@ -463,5 +491,5 @@ export async function fetchOverview(options) {
   }
 
   overviewCache.set(cacheKey, { at: Date.now(), payload })
-  return { ...payload, cached: false }
+  return { ...payload, cached: false, cacheAgeMs: 0, cacheTtlMs: ttlMs }
 }
