@@ -140,6 +140,36 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 
 包名一共出现在三处：`package.json` 的 `name`、`cordis.patch.yml` 的行 `name`、`dist/client.js` 里的 loader `id`。改名必须三处一起改并重新构建，`check-manifest` 就是用来拦这个的。
 
+## 发布
+
+**合并到 main 不会发布**，只跑 CI。发布由 tag 触发（`.github/workflows/release.yml`），这样版本号和产物不会在合并的瞬间被抢跑。
+
+```bash
+# 1. 改 package.json 的 version 并提交到 main
+# 2. 打 tag 推上去
+git tag v0.5.0
+git push origin v0.5.0
+```
+
+workflow 依次做：语法检查 → 清单一致性 → 全部单测 → 重建 `dist/client.js` 并比对（漂移就失败）→ 校验 tag 与 `package.json` 版本一致 → `npm publish --provenance` → 建 GitHub Release（自动生成 notes）。
+
+### 配置 `NPM_TOKEN`（一次性）
+
+1. 打开 npmjs.com → **Access Tokens** → **Generate New Token** → 选 **Granular Access Token**；
+2. 权限只给 `dsh-cloudflare-dash` 的 **Read and write**，有效期建议 90 天（到期要换）；
+3. 复制生成的 token（只显示一次）；
+4. GitHub 仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，名字填 `NPM_TOKEN`，值粘贴 token。
+
+> 用 **Classic** token 时必须选 `Automation` 类型，否则开了 2FA 的账号在 CI 里发布会因缺少 OTP 失败。
+
+### 或者不用 token（推荐）
+
+在 npmjs.com 的包设置里配置 **Trusted Publisher**：GitHub Actions / 仓库 `north30-dev/dsh-cloudflare-dash` / workflow `release.yml`。然后把 workflow 中 `Publish to npm` 步骤的 `env:` 两行删掉——npm 会通过 OIDC 认证，不存长期密钥，也自动带 provenance。
+
+### 用户怎么升级
+
+插件自己**没有**更新按钮，也不需要：DSH 的市场会读取 npm 上的 `latest` 并在插件卡片上提示可更新。注意 `link:` 方式安装的开发副本没有 registry 版本可比对，市场不会提示——要跟随版本就用 `plugin_manager install_bundle` 按 npm 版本安装。
+
 ## 路线图
 
 - ✅ M1 配置闭环（Token UI、校验、代理、诊断）
@@ -148,7 +178,10 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 - ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，未配置时不可见，按需调用）
 - ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
 - ✅ M6 采样透明化（分位数取最近有样本的切片并标注窗口、环比改用独立的上一周期切片、采样状态提示）
-- ⬜ 发布：npm 包、GitHub Release、收录到插件目录
+- ✅ M7 视角控制（Top 榜 20 条上限 + 展开、bot 口径开关）
+- ✅ M8 导出 CSV（含采样/窗口元数据）
+- ✅ M9 发布流程（tag 触发的 `release.yml`：校验 + npm publish + GitHub Release）
+- ⬜ 首次正式发版（tag `v0.5.0`）与收录到插件目录
 
 ## 数据说明
 

@@ -32,7 +32,10 @@ pnpm run build                       # 重新生成 dist/client.js
 node scripts/check-manifest.mjs      # 包名 / cordis.patch.yml / bundle id / files 一致性
 node --check src/host/*.js           # Host 语法检查
 pnpm test                            # 全部纯函数单测（不联网）
+git tag v0.5.0 && git push origin v0.5.0   # 发版：tag 触发 .github/workflows/release.yml
 ```
+
+发版只由 tag 触发（合并到 main 只跑 CI）。workflow 会校验 **tag 名必须等于 `v` + `package.json` 的 version**，所以顺序永远是「先 bump 版本并提交 → 再打 tag」；`dist/client.js` 的漂移检查也在发布前重跑一遍。
 
 安装/更新到本机 profile（需要 DSH 的 plugin_manager 工具）：
 
@@ -148,4 +151,4 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - ✅ M6 采样透明化：分位数改为「每个切片自带、取最新有样本的那片」并标注窗口；上一周期独立切片网格，环比精确；`confidence.count.sampleSize` 判断采样，命中时面板顶部提示（`summarizeSampling` + `tests/sampling.mjs`）
 - ✅ M7 视角控制：Top 榜每维度取 20 行、默认显示 6 行可展开（`mergeTop` + `tests/query-shape.mjs`）；bot 口径开关（`botFilter`，只影响总量/趋势/榜单/环比，缓存键带上 `bots`）
 - ✅ M8 导出 CSV：纯客户端 `csv.js`，长表 `section,key,metric,value`，含 `meta`（站点/范围/口径/窗口/采样/`top_limit`），字段过公式注入防护（`tests/csv.mjs`）
-- ⬜ 发布：npm 包、GitHub Release、收录到插件目录
+- ⬜ 发布：首次 tag（`release.yml` 已就绪，需先 bump 到 0.5.0 并合并到 main）、收录到插件目录
