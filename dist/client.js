@@ -130,10 +130,10 @@ function fmtDelta(current, previous) {
 }
 function fmtDuration(microseconds) {
   if (typeof microseconds !== "number" || !Number.isFinite(microseconds)) return "\u2014";
-  const ms = microseconds / 1e3;
-  if (ms >= 1e3) return `${(ms / 1e3).toFixed(2)} s`;
-  if (ms >= 100) return `${Math.round(ms)} ms`;
-  return `${ms.toFixed(1)} ms`;
+  const ms2 = microseconds / 1e3;
+  if (ms2 >= 1e3) return `${(ms2 / 1e3).toFixed(2)} s`;
+  if (ms2 >= 100) return `${Math.round(ms2)} ms`;
+  return `${ms2.toFixed(1)} ms`;
 }
 function fmtRatio(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "\u2014";
@@ -192,8 +192,8 @@ function TrendChart({ points, step = "day", note, labels }) {
   }
   const xOf = (index) => {
     if (byTime) {
-      const ratio = (times[index] - domainFrom) / (domainTo - domainFrom);
-      return PAD.left + Math.min(1, Math.max(0, ratio)) * innerWidth;
+      const ratio2 = (times[index] - domainFrom) / (domainTo - domainFrom);
+      return PAD.left + Math.min(1, Math.max(0, ratio2)) * innerWidth;
     }
     if (points.length === 1) return PAD.left + innerWidth / 2;
     return PAD.left + index / (points.length - 1) * innerWidth;
@@ -208,10 +208,10 @@ function TrendChart({ points, step = "day", note, labels }) {
   const slot = Math.max(innerWidth / Math.max(points.length, 1), 8);
   const ticks = [];
   if (byTime) {
-    const count = 5;
+    const count2 = 5;
     const span = domainTo - domainFrom;
-    for (let index = 0; index < count; index += 1) {
-      const at = domainFrom + span * index / (count - 1);
+    for (let index = 0; index < count2; index += 1) {
+      const at = domainFrom + span * index / (count2 - 1);
       const iso = step === "hour" ? new Date(at).toISOString() : new Date(at).toISOString().slice(0, 10);
       const label = fmtBucket(iso, step, false);
       if (label !== "" && !ticks.some((tick) => tick.label === label)) {
@@ -266,6 +266,118 @@ function TrendChart({ points, step = "day", note, labels }) {
   ))), active === null ? null : /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip", style: { left: `${xOf(hover) / WIDTH * 100}%` } }, /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-title" }, active.label), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-row" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--area" }), labels.visits, /* @__PURE__ */ import_react.default.createElement("b", null, fmtInt(active.visits))), /* @__PURE__ */ import_react.default.createElement("div", { className: "cfd-tooltip-row" }, /* @__PURE__ */ import_react.default.createElement("i", { className: "cfd-swatch cfd-swatch--line" }), labels.pageLoads, /* @__PURE__ */ import_react.default.createElement("b", null, fmtInt(active.pageLoads))))), typeof note === "string" && note !== "" ? /* @__PURE__ */ import_react.default.createElement("p", { className: "cfd-chart-note" }, note) : null);
 }
 
+// src/client/csv.js
+var VITALS = [
+  ["lcp", "LCP", false],
+  ["inp", "INP", false],
+  ["cls", "CLS", true],
+  ["fcp", "FCP", false],
+  ["ttfb", "TTFB", false]
+];
+var PHASES = [
+  ["dns", "DNS"],
+  ["connection", "TCP connect"],
+  ["tls", "TLS"],
+  ["request", "request"],
+  ["response", "response"],
+  ["render", "render"],
+  ["firstPaint", "first paint"],
+  ["firstContentfulPaint", "FCP"]
+];
+var LISTS = ["paths", "referrers", "countries", "browsers", "devices", "os"];
+function cell(value) {
+  if (value === null || value === void 0) return "";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+  const text = String(value);
+  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+}
+function line(fields) {
+  return fields.map(cell).join(",");
+}
+function ms(micros) {
+  if (typeof micros !== "number" || !Number.isFinite(micros)) return "";
+  return Math.round(micros / 100) / 10;
+}
+function ratio(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return Math.round(value * 1e3) / 1e3;
+}
+function count(metric, field) {
+  const value = metric?.[field];
+  return typeof value === "number" && Number.isFinite(value) ? value : "";
+}
+function buildOverviewCsv(data) {
+  if (data === null || typeof data !== "object") return "";
+  const rows = [line(["section", "key", "metric", "value"])];
+  const meta = (metric, value) => rows.push(line(["meta", "", metric, value]));
+  meta("site", data.site?.host ?? "");
+  meta("site_tag", data.site?.siteTag ?? "");
+  meta("range", data.range ?? "");
+  meta("bots", data.bots ?? "");
+  meta("window_from", data.window?.from ?? "");
+  meta("window_to", data.window?.to ?? "");
+  meta("generated_at", typeof data.generatedAt === "number" ? new Date(data.generatedAt).toISOString() : "");
+  meta("cache_age_ms", typeof data.cacheAgeMs === "number" ? data.cacheAgeMs : "");
+  meta("slices", typeof data.slices === "number" ? data.slices : "");
+  meta("top_limit", typeof data.topLimit === "number" ? data.topLimit : "");
+  meta("quantile_window_from", data.vitals?.window?.from ?? data.performance?.window?.from ?? "");
+  meta("quantile_window_to", data.vitals?.window?.to ?? data.performance?.window?.to ?? "");
+  for (const [prefix, sampling] of [["sampling_current", data.sampling?.current], ["sampling_previous", data.sampling?.previous]]) {
+    if (sampling === void 0 || sampling === null) continue;
+    meta(`${prefix}_sampled`, sampling.sampled === true ? "true" : "false");
+    meta(`${prefix}_samples`, typeof sampling.samples === "number" ? sampling.samples : "");
+    meta(`${prefix}_estimated`, typeof sampling.estimated === "number" ? sampling.estimated : "");
+  }
+  for (const [prefix, block] of [["vitals", data.vitals], ["performance", data.performance]]) {
+    const sampling = block?.sampling;
+    if (sampling === void 0 || sampling === null) continue;
+    meta(`${prefix}_sampled`, sampling.sampled === true ? "true" : "false");
+    meta(`${prefix}_samples`, typeof sampling.samples === "number" ? sampling.samples : "");
+    meta(`${prefix}_estimated`, typeof sampling.estimated === "number" ? sampling.estimated : "");
+  }
+  rows.push(line(["totals", "", "visits", data.totals?.visits ?? 0]));
+  rows.push(line(["totals", "", "page_loads", data.totals?.pageLoads ?? 0]));
+  rows.push(line(["previous", "", "visits", data.previous?.visits ?? 0]));
+  rows.push(line(["previous", "", "page_loads", data.previous?.pageLoads ?? 0]));
+  for (const point of Array.isArray(data.series) ? data.series : []) {
+    rows.push(line(["series", point.t, "visits", point.visits ?? 0]));
+    rows.push(line(["series", point.t, "page_loads", point.pageLoads ?? 0]));
+  }
+  for (const key of LISTS) {
+    const entries = Array.isArray(data.top?.[key]) ? data.top[key] : [];
+    for (const entry of entries) {
+      const name = entry.name === "" ? "(direct)" : entry.name;
+      rows.push(line([`top_${key}`, name, "page_loads", entry.pageLoads ?? 0]));
+      rows.push(line([`top_${key}`, name, "visits", entry.visits ?? 0]));
+    }
+  }
+  if (data.vitals !== null && data.vitals !== void 0) {
+    for (const [key, label, isRatio] of VITALS) {
+      const metric = data.vitals[key];
+      if (metric === void 0) continue;
+      rows.push(line(["vitals", label, isRatio ? "p75_ratio" : "p75_ms", isRatio ? ratio(metric.p75) : ms(metric.p75)]));
+      rows.push(line(["vitals", label, "good", count(metric, "good")]));
+      rows.push(line(["vitals", label, "needs_improvement", count(metric, "needs")]));
+      rows.push(line(["vitals", label, "poor", count(metric, "poor")]));
+      rows.push(line(["vitals", label, "total", count(metric, "total")]));
+    }
+  }
+  if (data.performance !== null && data.performance !== void 0) {
+    rows.push(line(["performance", "page_load", "p75_ms", ms(data.performance.pageLoad)]));
+    for (const [key, label] of PHASES) {
+      rows.push(line(["performance", label, "p75_ms", ms(data.performance.phases?.[key])]));
+    }
+  }
+  return `${rows.join("\n")}
+`;
+}
+function csvFilename(data) {
+  const host = String(data?.site?.host ?? "site").replace(/[^a-z0-9.-]+/gi, "_");
+  const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  return `cloudflare-${host}-${data?.range ?? "range"}-${stamp}.csv`;
+}
+
 // src/client/overview.jsx
 var RANGE_OPTIONS = ["24h", "7d", "30d"];
 var LIST_PREVIEW = 6;
@@ -278,13 +390,24 @@ function dayLabel(iso) {
 function spanLabel(window2) {
   return `${dayLabel(window2.from)} \u2192 ${dayLabel(window2.to)}`;
 }
-function ageText(ms, t) {
-  const seconds = Math.max(0, Math.round((typeof ms === "number" && Number.isFinite(ms) ? ms : 0) / 1e3));
+function ageText(ms2, t) {
+  const seconds = Math.max(0, Math.round((typeof ms2 === "number" && Number.isFinite(ms2) ? ms2 : 0) / 1e3));
   if (seconds < 90) return `${seconds} ${t("unit.secondsAgo")}`;
   return `${Math.round(seconds / 60)} ${t("unit.minutesAgo")}`;
 }
 function sampledLabel(sampling, t) {
   return `${t("sampling.estimate")} ${fmtInt(sampling.samples)}/${fmtInt(sampling.estimated)}`;
+}
+function saveCsv(filename, text) {
+  const blob = new Blob([`\uFEFF${text}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 function Overview({ t, proxy, onOpenSettings }) {
   const [sites, setSites] = (0, import_react2.useState)([]);
@@ -401,7 +524,15 @@ function Overview({ t, proxy, onOpenSettings }) {
       checked: bots === "all",
       onChange: (event) => setBots(event.target.checked ? "all" : "exclude")
     }
-  ), t("overview.bots")), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", disabled: loading, onClick: () => load(true) }, loading ? t("overview.refreshing") : t("overview.refresh")), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", onClick: onOpenSettings }, t("overview.settings")))), error === null ? null : /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-error" }, error), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-kpi-row" }, /* @__PURE__ */ import_react2.default.createElement(
+  ), t("overview.bots")), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", disabled: loading, onClick: () => load(true) }, loading ? t("overview.refreshing") : t("overview.refresh")), /* @__PURE__ */ import_react2.default.createElement(
+    "button",
+    {
+      className: "cfd-btn",
+      disabled: data === null,
+      onClick: () => saveCsv(csvFilename(data), buildOverviewCsv(data))
+    },
+    t("action.export")
+  ), /* @__PURE__ */ import_react2.default.createElement("button", { className: "cfd-btn", onClick: onOpenSettings }, t("overview.settings")))), error === null ? null : /* @__PURE__ */ import_react2.default.createElement("p", { className: "cfd-error" }, error), /* @__PURE__ */ import_react2.default.createElement("section", { className: "cfd-kpi-row" }, /* @__PURE__ */ import_react2.default.createElement(
     KpiCard,
     {
       label: t("kpi.visits"),
@@ -457,7 +588,7 @@ function ListCard({ title, rows, t, directLabel }) {
 }
 function VitalTile({ label, value, metric, t }) {
   const total = Math.max(metric.total, metric.good + metric.needs + metric.poor);
-  const share = (count) => total === 0 ? 0 : count / total * 100;
+  const share = (count2) => total === 0 ? 0 : count2 / total * 100;
   return /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-head" }, /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-vital-name" }, label), /* @__PURE__ */ import_react2.default.createElement("span", { className: "cfd-vital-value" }, value)), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-bar" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-good", style: { width: `${share(metric.good)}%` } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-needs", style: { width: `${share(metric.needs)}%` } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-poor", style: { width: `${share(metric.poor)}%` } })), /* @__PURE__ */ import_react2.default.createElement("div", { className: "cfd-vital-foot" }, total === 0 ? t("vitals.noSamples") : `${Math.round(share(metric.good))}% ${t("vitals.good")} \xB7 ${fmtInt(total)} ${t("vitals.samples")}`));
 }
 function PerformanceCard({ performance, t, partial }) {
@@ -740,6 +871,7 @@ var zh = {
   "step.proxy.hint": "\u4EC5\u652F\u6301 http://host:port \u7684 CONNECT \u4EE3\u7406\uFF1B\u4E0D\u586B\u5219\u76F4\u8FDE\u3002",
   "action.probe": "\u7F51\u7EDC\u8BCA\u65AD",
   "action.probing": "\u8BCA\u65AD\u4E2D\u2026",
+  "action.export": "\u5BFC\u51FA CSV",
   "action.delete": "\u5220\u9664 Token",
   "action.replace": "\u66F4\u6362 Token",
   "action.verify": "\u91CD\u65B0\u9A8C\u8BC1",
@@ -866,6 +998,7 @@ var en = {
   "step.proxy.hint": "Accepts an http://host:port CONNECT proxy only; leave empty to connect directly.",
   "action.probe": "Run diagnostics",
   "action.probing": "Measuring\u2026",
+  "action.export": "Export CSV",
   "action.delete": "Remove token",
   "action.replace": "Replace token",
   "action.verify": "Verify again",

@@ -508,6 +508,9 @@ export async function fetchOverview(options) {
     bots,
     window,
     slices: slices.length,
+    // The cap the six lists were fetched with: the panel and the CSV export both
+    // need to know a list is truncated, not complete.
+    topLimit: TOP_LIMIT,
     totals,
     previous,
     // How much of each total is measured rather than extrapolated.

@@ -59,9 +59,9 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 | `src/host/http.js` | 零依赖出网：直连 / HTTP CONNECT 代理 / 阶段计时 |
 | `src/host/store.js` | Token 存取（凭据记录）与格式识别 |
 | `src/host/state.js` | 非机密状态：Account ID、代理偏好、上次验证快照（`accounts`/`rumSites`/`verifiedAt`），存 `$DSH_HOME/cloudflare-dash/state.json` |
-| `src/client/` | 浏览器侧：`index.jsx` 注册、`app.jsx` 控制器、`overview.jsx` 看板、`settings.jsx` 配置、`chart.jsx`、`format.js`、`api.js`、`locale.js`、`styles.css` |
+| `src/client/` | 浏览器侧：`index.jsx` 注册、`app.jsx` 控制器、`overview.jsx` 看板、`settings.jsx` 配置、`chart.jsx`、`csv.js`（导出）、`format.js`、`api.js`、`locale.js`、`styles.css` |
 | `dist/client.js` | 构建产物（提交） |
-| `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）、`tests/query-shape.mjs`（bot 过滤子句 + Top 榜合并）、`tests/state.mjs`（验证快照读写，用临时 `DSH_HOME`）。`pnpm test` 跑全部 |
+| `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）、`tests/query-shape.mjs`（bot 过滤子句 + Top 榜合并）、`tests/csv.mjs`（导出格式与转义）、`tests/state.mjs`（验证快照读写，用临时 `DSH_HOME`）。`pnpm test` 跑全部 |
 
 ## 硬性约束
 
@@ -75,7 +75,8 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 7. 路由是 exact 注册，绕过 DSH `/api` 栅栏，因此必须自己调 `connection.requestRejection`，缺失时退化为 loopback 校验，并拒绝 `sec-fetch-site: cross-site`。
 8. **许可证是 MIT，且已提交进仓库**：`LICENSE` 全文与 `package.json` 的 `license` 字段必须同时存在、保持一致，README 的许可证说明同步为 MIT；不要引入其他许可证，也不要删掉 `LICENSE`。
 9. **agent 工具只有一个**（`cloudflare_analytics`，用 `action` 区分用途），返回紧凑文本报告而不是原始 JSON；不要改成「每个视图一个工具」。注册必须带 `when` 条件，未配置 Token 时不出现。
-10. Host 侧**不能** `import '@deepseek-ai/dsh-tools'`（链接安装的插件目录解析不到 DSH 的 node_modules），所以工具定义手写：`parameters` 是**原始 JSON Schema**（不是首方工具 `defineTool` 用的 property-map 写法），`output.schema` 同为一个 JSON Schema 子集。
+10. Host 侧**不能** `import '@deepseek-ai/dsh-tools'`（链接安装的插件目录解析不到 dsh 的 node_modules），所以工具定义手写：`parameters` 是**原始 JSON Schema**（不是首方工具 `defineTool` 用的 property-map 写法），`output.schema` 同为一个 JSON Schema 子集。
+11. **CSV 导出是纯客户端**（`src/client/csv.js`，不新增 Host 路由、不重新取数）：数据已经在面板手里，为导出再加接口只会多一份口径。CSV 必须带 `meta` 行（站点/范围/口径/窗口/采样/`top_limit`），否则导出的数字会脱离它们的前提；字段要过 `cell()` —— `referrerHost`、`requestPath` 是访客可控的，以 `= + - @` 开头会被表格当公式执行。
 
 ## API 事实（踩过的坑，别再踩）
 
@@ -146,5 +147,5 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
 - ✅ M6 采样透明化：分位数改为「每个切片自带、取最新有样本的那片」并标注窗口；上一周期独立切片网格，环比精确；`confidence.count.sampleSize` 判断采样，命中时面板顶部提示（`summarizeSampling` + `tests/sampling.mjs`）
 - ✅ M7 视角控制：Top 榜每维度取 20 行、默认显示 6 行可展开（`mergeTop` + `tests/query-shape.mjs`）；bot 口径开关（`botFilter`，只影响总量/趋势/榜单/环比，缓存键带上 `bots`）
-- ⬜ 导出当前视图（CSV）
+- ✅ M8 导出 CSV：纯客户端 `csv.js`，长表 `section,key,metric,value`，含 `meta`（站点/范围/口径/窗口/采样/`top_limit`），字段过公式注入防护（`tests/csv.mjs`）
 - ⬜ 发布：npm 包、GitHub Release、收录到插件目录

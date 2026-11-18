@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { callApi, proxyQuery } from './api.js'
 import { TrendChart } from './chart.jsx'
+import { buildOverviewCsv, csvFilename } from './csv.js'
 import { fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
 
 const RANGE_OPTIONS = ['24h', '7d', '30d']
@@ -50,6 +51,26 @@ function ageText(ms, t) {
  */
 function sampledLabel(sampling, t) {
   return `${t('sampling.estimate')} ${fmtInt(sampling.samples)}/${fmtInt(sampling.estimated)}`
+}
+
+/**
+ * Hand a generated CSV to the browser as a download.
+ *
+ * The byte-order mark is what makes Excel read the file as UTF-8 instead of
+ * mangling any non-ASCII page or referrer name.
+ * @param {string} filename
+ * @param {string} text
+ */
+function saveCsv(filename, text) {
+  const blob = new Blob([`\ufeff${text}`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -241,6 +262,13 @@ export function Overview({ t, proxy, onOpenSettings }) {
           </label>
           <button className="cfd-btn" disabled={loading} onClick={() => load(true)}>
             {loading ? t('overview.refreshing') : t('overview.refresh')}
+          </button>
+          <button
+            className="cfd-btn"
+            disabled={data === null}
+            onClick={() => saveCsv(csvFilename(data), buildOverviewCsv(data))}
+          >
+            {t('action.export')}
           </button>
           <button className="cfd-btn" onClick={onOpenSettings}>
             {t('overview.settings')}
