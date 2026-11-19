@@ -1,0 +1,80 @@
+name: Release
+
+# Merging to main only runs CI; nothing is published until a tag is pushed.
+# Publishing on merge would race the version bump and ship an untagged tree.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm provenance / trusted publishing
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags and history, for the generated release notes
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          # No `registry-url`: it writes an .npmrc with
+          # `_authToken=${NODE_AUTH_TOKEN}`, and with trusted publishing there is
+          # no token, so npm would fail to expand it. The default registry is
+          # already registry.npmjs.org.
+
+      # Trusted publishing needs npm >= 11.5; node 22 ships npm 10.
+      - name: Use a current npm
+        run: npm install -g npm@^11
+
+      # Pinned so the bundle this job rebuilds is byte-identical to the
+      # committed one; bump the lockfile and this version together.
+      - name: Install build tool
+        run: npm install --no-save --no-package-lock --no-audit --no-fund esbuild@0.25.12
+
+      - name: Host syntax
+        run: |
+          for file in index.js src/host/*.js scripts/*.mjs tests/*.mjs; do
+            node --check "$file"
+          done
+
+      - name: Manifest consistency
+        run: node scripts/check-manifest.mjs
+
+      - name: Unit tests
+        run: |
+          for file in tests/*.mjs; do
+            node "$file"
+          done
+
+      # The tag is what gets published; the committed bundle is what users
+      # install. Neither may disagree with the source it claims to be.
+      - name: Rebuild the client bundle and fail on drift
+        run: |
+          node scripts/build-client.mjs
+          git diff --exit-code -- dist/client.js
+
+      - name: Tag matches package version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json ${version}; bump the version, commit, then tag"
+            exit 1
+          fi
+
+      # Authenticates through the OIDC token granted above: the package has a
+      # trusted publisher bound to this repository and this workflow filename.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+      - name: GitHub Release
+        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}" --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}

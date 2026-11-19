@@ -140,6 +140,58 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 
 包名一共出现在三处：`package.json` 的 `name`、`cordis.patch.yml` 的行 `name`、`dist/client.js` 里的 loader `id`。改名必须三处一起改并重新构建，`check-manifest` 就是用来拦这个的。
 
+## 发布
+
+**合并到 main 不会发布**，只跑 CI。发布由 tag 触发（`.github/workflows/release.yml`），这样版本号和产物不会在合并的瞬间被抢跑。
+
+```bash
+# 1. 改 package.json 的 version 并提交到 main
+# 2. 打 tag 推上去
+git tag v0.5.0
+git push origin v0.5.0
+```
+
+workflow 依次做：语法检查 → 清单一致性 → 全部单测 → 重建 `dist/client.js` 并比对（漂移就失败）→ 校验 tag 与 `package.json` 版本一致 → `npm publish --provenance` → 建 GitHub Release（自动生成 notes）。
+
+### 认证：Trusted Publisher（当前方式）
+
+在 npmjs.com 的包设置里配置 **Trusted Publisher**：
+
+| 字段 | 值 |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization or user | `north30-dev` |
+| Repository | `dsh-cloudflare-dash` |
+| Workflow filename | `release.yml`（只要文件名，必须位于 `.github/workflows/`） |
+| Environment name | 留空（workflow 未声明 environment） |
+| Allowed actions | 勾 **Allow npm publish** |
+
+配好之后**不需要任何 secret**：`.github/workflows/release.yml` 用 `id-token: write` 换取 OIDC 令牌，npm 侧校验仓库与 workflow 文件名后允许发布，并自动带 provenance。
+
+⚠️ 这个绑定**创建后不能修改**，删了才能重建——提交前核对一遍 `north30-dev` / `dsh-cloudflare-dash` / `release.yml` 三个字符串。
+
+同页还有两个包级设置，建议一起调：
+
+- **Allowed actions**：必须勾 **Allow npm publish**。不勾的话 npm 只允许 `npm stage publish`（先暂存、再人工批准），tag 触发的自动发布就走不通了。
+- **Publishing access**：选最严格的 *Require two-factor authentication and disallow bypass 2fa tokens*。既然发布已经全部走 OIDC，就不该再留一条「token 可绕过 2FA」的口子；两档设置对 trusted publisher 都有效，选严格的不影响发版。
+
+### 备选：`NPM_TOKEN`
+
+不想用 OIDC 时，用 granular token：npmjs.com → **Access Tokens** → **Generate New Token** → **Granular Access Token**，权限只给本包的 **Read and write**；然后仓库 **Settings → Secrets and variables → Actions → New repository secret**，名字 `NPM_TOKEN`。最后把 `Publish to npm` 步骤改成：
+
+```yaml
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+> 用 Classic token 必须选 `Automation` 类型，否则开了 2FA 的账号在 CI 里会因缺少 OTP 失败。
+
+### 用户怎么升级
+
+插件自己**没有**更新按钮，也不需要：DSH 的市场会读取 npm 上的 `latest` 并在插件卡片上提示可更新。注意 `link:` 方式安装的开发副本没有 registry 版本可比对，市场不会提示——要跟随版本就用 `plugin_manager install_bundle` 按 npm 版本安装。
+
 ## 路线图
 
 - ✅ M1 配置闭环（Token UI、校验、代理、诊断）
@@ -147,7 +199,11 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 - ✅ M3 缓存与后台刷新（60s 轮询 + Host TTL 缓存）、设备/操作系统维度、加载性能阶段分解（DNS/TCP/TLS/请求/响应/渲染/首绘）
 - ✅ M4 单个聚合 agent 工具 `cloudflare_analytics`（`action` 参数，未配置时不可见，按需调用）
 - ✅ M5 开源准备（`SECURITY.md`、CI、安装章节、市场图标与截图）
-- ⬜ 发布：npm 包、GitHub Release、收录到插件目录
+- ✅ M6 采样透明化（分位数取最近有样本的切片并标注窗口、环比改用独立的上一周期切片、采样状态提示）
+- ✅ M7 视角控制（Top 榜 20 条上限 + 展开、bot 口径开关）
+- ✅ M8 导出 CSV（含采样/窗口元数据）
+- ✅ M9 发布流程（tag 触发的 `release.yml`：校验 + npm publish + GitHub Release）
+- ⬜ 首次正式发版（tag `v0.5.0`）与收录到插件目录
 
 ## 数据说明
 
@@ -163,13 +219,29 @@ node tests/slice-window.mjs          # 纯函数断言（不联网）
 
 **不包含带宽/流量字节**：RUM 数据集没有该指标，官网 Web Analytics 的「Data served」无法等价复现，面板里也没有伪造。时间桶按 UTC 取回、按浏览器本地时区展示。
 
-**采样与 30 天窗口**：Cloudflare 对 RUM 聚合做 ABR 采样，**窗口越长分辨率越低**。一次 30 天的查询实测只回 2 天数据、数值全是 10 的倍数（7 天窗口却有完整 6 天），所以 30d 改为**按 7 天切片查询再合并**：总量、趋势、六类 Top 榜由切片相加（精确），Core Web Vitals 与加载性能的分位数不能相加，仍走整窗查询（可能是采样估计值）。这条规则只影响长窗口，24h / 7d 仍是一次查询。（[官方 sampling 说明](https://developers.cloudflare.com/analytics/graphql-api/sampling/)）
+**bot 流量**：默认排除，与官网口径一致；工具栏勾选「含 bot 流量」后，总量、趋势、六个 Top 榜和环比都改为包含 bot，**Core Web Vitals 与加载性能始终排除**（爬虫没有可比的性能指标）。脚注会标明当前是哪种口径。注意 RUM 只统计执行了 JavaScript 的访问，所以不少站点的 bot 计数本身就是 0，勾选前后数字相同属正常。
 
-**缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。
+**Top 榜**：每个维度最多取 20 条，卡片默认显示 6 条，点「展开全部」查看其余部分。
+
+**导出 CSV**：工具栏的「导出 CSV」把当前视图（当前站点 / 时间范围 / bot 口径）导出成一个文件，文件名形如 `cloudflare-<站点>-<范围>-<日期>.csv`。文件是长表 `section,key,metric,value`，开头一组 `meta` 行记录站点、范围、bot 口径、窗口、生成时间、切片段数、列表上限，以及总量/环比/CWV/加载性能各自的采样状态——这样导出的数字不会脱离它们的前提。时长为毫秒（`p75_ms`），CLS 是比值（`p75_ratio`），两者不混用单位。
+
+**采样与长窗口**：Cloudflare 对 RUM 聚合做 ABR 采样，**窗口越长分辨率越低**。实测一次 30 天查询只回 8 天里带流量的 2 天、数值全是 10 的倍数，而且该窗口是**用 5 个样本外推出 50 次页面加载**（`confidence.count` 的 `sampleSize` 与 `estimate`）。所以 30d 改为**按 7 天切片查询再合并**，上一周期另开一套独立切片（30 不是 7 的整数倍，共用一套网格会把某个切片劈成两段）：总量、趋势、Top 榜、环比都是切片相加的精确值。24h / 7d 仍是一次查询。（[官方 sampling 说明](https://developers.cloudflare.com/analytics/graphql-api/sampling/)）
+
+**分位数与采样标注**：P75 不能跨窗口相加，所以 Core Web Vitals 与加载性能取**最近一段有样本的切片**（30d 下通常就是近 7 天），卡片上会标出该窗口的起止日期。整窗 30 天的 P75 实测来自 7 个样本外推成的 70，同一站点 LCP 会显示成 7.40 s，而按周查询是 1.42 s。
+
+采样状态分两层展示，都读 `confidence(level: 0.95) { count { estimate sampleSize } }`：
+
+- **总量 / 趋势 / Top 榜**：任一切片被采样时，面板顶部出现提示并给出「实际样本 / 估算页面加载」；上一周期若是估算值，环比旁边会注明「仅供方向参考」；
+- **Core Web Vitals / 加载性能**：各自只来自一个切片，所以单独判断，被采样时在卡片标题旁标出样本比例。
+
+没有任何采样时不作标注，也不会谎称「精确」；拿不到 confidence 块时按「未知」处理，同样不标注。
+
+**缓存与刷新**：看板每 60 秒后台刷新一次（标签页不可见时暂停），Host 侧按范围缓存结果（24h 60s / 7d 120s / 30d 300s）；点「刷新」会带 `fresh=1` 绕过缓存。脚注会显示数据的生成时间与缓存年龄（例如「缓存 · 42 秒前」），刚取到的新数据标「刚刚更新」。30d 一次加载会并行发出 10 个切片查询（当前 5 + 上一周期 5）。
 
 ## 限制
 
 - 只展示 Token 有权访问的账户与站点。
 - 未启用 Web Analytics 的站点不会出现在站点列表里（面板会给提示，不报错）。
+- 长范围（30d）下 Core Web Vitals 与加载性能描述的是**最近一段有样本的窗口**，不是整段 30 天；卡片上会标出该窗口，整段的分位数无法从采样数据里还原。
 - 插件依赖 DSH 的 slot 契约（`sidebar.panellist` / `main`），`engines.dsh` 声明了已验证的最小版本。
 - License：MIT，见 [`LICENSE`](LICENSE)。

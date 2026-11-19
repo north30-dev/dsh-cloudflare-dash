@@ -5,11 +5,28 @@
  * spent on this module's fixed documents. All aggregation uses `bot: 0` so the
  * numbers track what the Cloudflare dashboard shows, and the hourly dimension is
  * returned in UTC for the browser to localize.
+ *
+ * Cloudflare runs these aggregates through ABR sampling, and the resolution
+ * gets coarser as the requested window grows: a single 30-day document once came
+ * back with two of the eight days that held traffic and counts rounded to tens,
+ * while the same window queried a week at a time came back complete. So a long
+ * range is fetched as slices, and nothing that sums is taken from a whole-window
+ * aggregate. Quantiles are the exception — a P75 does not add up — which is why
+ * they come from the newest slice that actually has samples, and why the panel
+ * shows which window they describe.
  */
 import { CloudflareError, callApi, graphql } from './cloudflare.js'
 
 const SITE_CACHE_MS = 60_000
-const TOP_LIMIT = 6
+
+/**
+ * Rows fetched per dimension, per slice.
+ *
+ * Twenty rather than six: the panel shows six and expands on demand, and a
+ * wider per-slice cut keeps the merged ranking honest for a name that sits just
+ * outside the short list in every slice but leads on the sum.
+ */
+const TOP_LIMIT = 20
 
 /** How long one dashboard payload may be served from memory before re-querying. */
 const OVERVIEW_TTL_MS = { '24h': 60_000, '7d': 120_000, '30d': 300_000 }
@@ -36,7 +53,7 @@ export const RANGES = {
   // A month is fetched as weeks: Cloudflare's ABR sampling coarsens a 30-day
   // aggregate to the point of returning a couple of days with counts rounded to
   // tens, while the same days queried a week at a time come back exact. Ranges
-  // without `chunkMs` stay a single query.
+  // without `chunkMs` stay a single slice.
   '30d': { ms: 30 * 24 * 3600 * 1000, dimension: 'date', orderBy: 'date_ASC', chunkMs: 7 * 24 * 3600 * 1000 },
 }
 
@@ -46,6 +63,20 @@ export const RANGES = {
  */
 function num(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/**
+ * The `bot` clause for a filter, or an empty string when bots are included.
+ *
+ * `all` is the only value that includes bots; anything else keeps them out,
+ * which is the default the Cloudflare dashboard shows. Comparing against
+ * `'all'` rather than comparing against `'exclude'` means a bad caller cannot
+ * silently change what the numbers mean.
+ * @param {unknown} bots
+ * @returns {string}
+ */
+export function botFilter(bots) {
+  return bots === 'all' ? '' : ', bot: 0'
 }
 
 /**
@@ -95,10 +126,61 @@ function rowOf(row, dimension) {
 }
 
 /**
+ * How much of a window's count came from real samples instead of Cloudflare's
+ * extrapolation? `confidence.count` exposes both numbers, so the panel can say
+ * "5 samples for 50 loads" instead of presenting an estimate as a measurement.
+ *
+ * Only `confidence.count` is queried: asking for `confidence.sum.visits` makes
+ * Cloudflare drop the whole row on a sampled window (observed, not documented).
+ * @param {any[]} rows - the `totals` row of each slice, newest first.
+ * @returns {{ slices: number, known: number, sampled: boolean, sampledSlices: number, samples: number, estimated: number }}
+ */
+export function summarizeSampling(rows) {
+  const list = Array.isArray(rows) ? rows : []
+  const summary = { slices: list.length, known: 0, sampled: false, sampledSlices: 0, samples: 0, estimated: 0 }
+  for (const row of list) {
+    const confidence = row?.confidence?.count
+    const estimate = num(confidence?.estimate)
+    const sampleSize = num(confidence?.sampleSize)
+    // Without a usable estimate there is nothing to compare, and claiming
+    // "exact" would be a guess.
+    if (!(estimate > 0)) continue
+    summary.known += 1
+    summary.samples += sampleSize
+    summary.estimated += estimate
+    if (sampleSize < estimate) summary.sampledSlices += 1
+  }
+  summary.sampled = summary.sampledSlices > 0
+  return summary
+}
+
+/**
+ * Sampling state of a single dataset row, from its `confidence.count` block.
+ *
+ * `known: false` means Cloudflare gave no usable confidence block — the caller
+ * must not turn that into "exact", only into "nothing to say".
+ * @param {any} row
+ * @returns {{ known: boolean, samples: number, estimated: number, sampled: boolean }}
+ */
+export function rowSampling(row) {
+  const confidence = row?.confidence?.count
+  const estimate = num(confidence?.estimate)
+  const sampleSize = num(confidence?.sampleSize)
+  if (!(estimate > 0)) {
+    // No estimate to compare against: report the row's own count twice rather
+    // than a nonsense 0-of-N.
+    const fallback = num(row?.count)
+    return { known: false, samples: fallback, estimated: fallback, sampled: false }
+  }
+  return { known: true, samples: sampleSize, estimated: estimate, sampled: sampleSize < estimate }
+}
+
+/**
  * Shape the Core Web Vitals dataset.
  * @param {any} row
+ * @param {{ from: string, to: string }} window - the slice these quantiles describe.
  */
-function vitalsOf(row) {
+function vitalsOf(row, window) {
   if (row === undefined || row === null) return null
   const sum = row.sum ?? {}
   const quantiles = row.quantiles ?? {}
@@ -116,6 +198,8 @@ function vitalsOf(row) {
   return {
     samples: num(row.count),
     visits: num(sum.visits),
+    sampling: rowSampling(row),
+    window,
     lcp: metric('lcp', 'largestContentfulPaintP75'),
     inp: metric('inp', 'interactionToNextPaintP75'),
     cls: metric('cls', 'cumulativeLayoutShiftP75'),
@@ -127,14 +211,17 @@ function vitalsOf(row) {
 /**
  * Shape the loading-performance dataset.
  * @param {any} row
+ * @param {{ from: string, to: string }} window - the slice these quantiles describe.
  */
-function performanceOf(row) {
+function performanceOf(row, window) {
   if (row === undefined || row === null) return null
   const quantiles = row.quantiles ?? {}
   /** @param {string} key */
   const phase = (key) => (typeof quantiles[key] === 'number' ? quantiles[key] : null)
   return {
     samples: num(row.count),
+    sampling: rowSampling(row),
+    window,
     pageLoad: phase('pageLoadTimeP75'),
     phases: {
       dns: phase('dnsTimeP75'),
@@ -151,26 +238,37 @@ function performanceOf(row) {
 
 /**
  * Build the grouped-rows document for one slice of the window: the trend series,
- * the six dimension lists, and that slice's own totals.
+ * the six dimension lists, that slice's own totals, and its quantile datasets.
  *
  * Slices exist because Cloudflare lowers the resolution of these aggregates as
- * the requested window grows (ABR sampling). A 30-day request came back with two
- * of the six days that held traffic and counts rounded to tens, while the same
- * week queried alone came back complete; the Cloudflare docs recommend weekly
- * ranges over monthly ones for exactly this reason.
+ * the requested window grows (ABR sampling). The Cloudflare docs recommend
+ * weekly ranges over monthly ones for exactly this reason.
+ *
+ * Quantiles ride along per slice even though they cannot be merged: a seven-day
+ * window is precise, so the newest slice that has samples answers "how fast is
+ * the site now" honestly, while a whole-window P75 answers it with seven
+ * extrapolated samples.
  *
  * Values are validated (hex tags, ISO instants) before interpolation, so the
  * document never carries caller-controlled text.
- * @param {{ accountTag: string, siteTag: string, from: string, to: string, dimension: string, orderBy: string }} input
+ * @param {{ accountTag: string, siteTag: string, from: string, to: string, dimension: string, orderBy: string, bots?: unknown }} input
  * @returns {string}
  */
 function buildSliceQuery(input) {
-  const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
+  // Traffic and the six lists follow the bot switch; the quantile datasets never
+  // do. A crawler does not have a Core Web Vital, so folding bots into a P75
+  // would make the fast/slow split meaningless rather than merely different.
+  const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}"${botFilter(input.bots)} }`
+  const humans = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
   const top = (alias, dimension) =>
     `${alias}: rumPageloadEventsAdaptiveGroups(limit: ${TOP_LIMIT}, orderBy: [count_DESC], ${current}) { count sum { visits } dimensions { ${dimension} } }`
   return `query {
   viewer { accounts(filter: { accountTag: "${input.accountTag}" }) {
-    totals: rumPageloadEventsAdaptiveGroups(limit: 1, ${current}) { count sum { visits } }
+    totals: rumPageloadEventsAdaptiveGroups(limit: 1, ${current}) {
+      count
+      sum { visits }
+      confidence(level: 0.95) { count { estimate sampleSize } }
+    }
     series: rumPageloadEventsAdaptiveGroups(limit: 400, orderBy: [${input.orderBy}], ${current}) { count sum { visits } dimensions { ${input.dimension} } }
     ${top('paths', 'requestPath')}
     ${top('referrers', 'refererHost')}
@@ -178,31 +276,39 @@ function buildSliceQuery(input) {
     ${top('browsers', 'userAgentBrowser')}
     ${top('devices', 'deviceType')}
     ${top('os', 'userAgentOS')}
+    vitals: rumWebVitalsEventsAdaptiveGroups(limit: 1, ${humans}) {
+      count
+      sum { visits lcpGood lcpNeedsImprovement lcpPoor lcpTotal inpGood inpNeedsImprovement inpPoor inpTotal clsGood clsNeedsImprovement clsPoor clsTotal fcpGood fcpNeedsImprovement fcpPoor fcpTotal ttfbGood ttfbNeedsImprovement ttfbPoor ttfbTotal }
+      quantiles { largestContentfulPaintP75 interactionToNextPaintP75 cumulativeLayoutShiftP75 firstContentfulPaintP75 timeToFirstByteP75 }
+      confidence(level: 0.95) { count { estimate sampleSize } }
+    }
+    performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${humans}) {
+      count
+      quantiles { pageLoadTimeP75 dnsTimeP75 connectionTimeP75 tlsTimeP75 requestTimeP75 responseTimeP75 pageRenderTimeP75 firstPaintP75 firstContentfulPaintP75 }
+      confidence(level: 0.95) { count { estimate sampleSize } }
+    }
   } }
 }`
 }
 
 /**
- * Build the document for the rows that cannot be summed across slices: the
- * previous window's totals, and the two quantile datasets (a P75 does not add
- * up). They stay whole-window, so their numbers may be a sampled estimate.
- * @param {{ accountTag: string, siteTag: string, from: string, to: string, previousFrom: string, previousTo: string }} input
+ * Build the document for one slice of the comparison window. Only the totals are
+ * needed: the previous period feeds a delta, not a chart, and the six top lists
+ * would triple the payload for numbers nobody reads.
+ *
+ * The bot clause must match the current window's, or the delta ends up comparing
+ * a range that includes crawlers against one that does not.
+ * @param {{ accountTag: string, siteTag: string, from: string, to: string, bots?: unknown }} input
  * @returns {string}
  */
-function buildSummaryQuery(input) {
-  const current = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}", bot: 0 }`
-  const previous = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.previousFrom}", datetime_leq: "${input.previousTo}", bot: 0 }`
+function buildPreviousSliceQuery(input) {
+  const previous = `filter: { siteTag: "${input.siteTag}", datetime_geq: "${input.from}", datetime_leq: "${input.to}"${botFilter(input.bots)} }`
   return `query {
   viewer { accounts(filter: { accountTag: "${input.accountTag}" }) {
-    previous: rumPageloadEventsAdaptiveGroups(limit: 1, ${previous}) { count sum { visits } }
-    performance: rumPerformanceEventsAdaptiveGroups(limit: 1, ${current}) {
+    totals: rumPageloadEventsAdaptiveGroups(limit: 1, ${previous}) {
       count
-      quantiles { pageLoadTimeP75 dnsTimeP75 connectionTimeP75 tlsTimeP75 requestTimeP75 responseTimeP75 pageRenderTimeP75 firstPaintP75 firstContentfulPaintP75 }
-    }
-    vitals: rumWebVitalsEventsAdaptiveGroups(limit: 1, ${current}) {
-      count
-      sum { visits lcpGood lcpNeedsImprovement lcpPoor lcpTotal inpGood inpNeedsImprovement inpPoor inpTotal clsGood clsNeedsImprovement clsPoor clsTotal fcpGood fcpNeedsImprovement fcpPoor fcpTotal ttfbGood ttfbNeedsImprovement ttfbPoor ttfbTotal }
-      quantiles { largestContentfulPaintP75 interactionToNextPaintP75 cumulativeLayoutShiftP75 firstContentfulPaintP75 timeToFirstByteP75 }
+      sum { visits }
+      confidence(level: 0.95) { count { estimate sampleSize } }
     }
   } }
 }`
@@ -247,15 +353,18 @@ export function sliceWindow(fromMs, toMs, chunkMs) {
  * rows, so a name that stays below the cut in every slice can miss the merged
  * list; the panel wants a short list, and the alternative — unbounded group
  * sizes — is what makes Cloudflare lower the resolution in the first place.
+ *
+ * Exported for the unit tests: the merge is the part that decides whether the
+ * ranking the user sees is the one the numbers imply.
  * @param {any[]} accounts
  * @param {string} alias
  * @param {string} dimension
  * @param {boolean} keepBlank whether a blank dimension value is a real row (direct referrers)
  * @returns {Array<{ name: string, visits: number, pageLoads: number }>}
  */
-function mergeTop(accounts, alias, dimension, keepBlank) {
+export function mergeTop(accounts, alias, dimension, keepBlank) {
   const merged = new Map()
-  for (const account of accounts) {
+  for (const account of Array.isArray(accounts) ? accounts : []) {
     const rows = Array.isArray(account?.[alias]) ? account[alias] : []
     for (const row of rows) {
       const entry = rowOf(row, dimension)
@@ -283,6 +392,7 @@ function mergeTop(accounts, alias, dimension, keepBlank) {
  *   token: string,
  *   proxy?: { host: string, port: number },
  *   fresh?: boolean,
+ *   bots?: unknown,
  * }} options
  * @returns {Promise<object>}
  */
@@ -291,10 +401,16 @@ export async function fetchOverview(options) {
   if (spec === undefined) throw new CloudflareError('bad-range', '不支持的时间范围')
   if (!/^[0-9a-f]{32}$/i.test(options.siteTag)) throw new CloudflareError('bad-site', 'siteTag 不合法')
 
-  const cacheKey = `${options.accountId}:${options.siteTag}:${options.range}`
+  // Including bots changes every summable number, so it belongs in the cache
+  // key: without it a toggle would be served the other mode's payload.
+  const bots = options.bots === 'all' ? 'all' : 'exclude'
+  const cacheKey = `${options.accountId}:${options.siteTag}:${options.range}:${bots}`
+  const ttlMs = OVERVIEW_TTL_MS[options.range]
   const cached = overviewCache.get(cacheKey)
-  if (options.fresh !== true && cached !== undefined && Date.now() - cached.at < OVERVIEW_TTL_MS[options.range]) {
-    return { ...cached.payload, cached: true }
+  if (options.fresh !== true && cached !== undefined && Date.now() - cached.at < ttlMs) {
+    // The age travels with the payload: "cached" alone cannot tell a user
+    // whether they are looking at a number from ten seconds or five minutes ago.
+    return { ...cached.payload, cached: true, cacheAgeMs: Date.now() - cached.at, cacheTtlMs: ttlMs }
   }
 
   const sites = await listSites(options)
@@ -307,40 +423,49 @@ export async function fetchOverview(options) {
   const iso = (value) => value.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
   const slices = sliceWindow(from.getTime(), to.getTime(), spec.chunkMs)
+  // The previous period gets its own grid: a 30-day window is not a whole number
+  // of 7-day chunks, so reusing this window's grid would cut one slice across
+  // both periods and make its numbers unassignable.
+  const previousSlices = sliceWindow(now - spec.ms * 2, from.getTime(), spec.chunkMs)
+
   const window = { from: iso(from), to: iso(to) }
   const filter = { accountTag: options.accountId, siteTag: site.siteTag }
   const transport = { token: options.token, proxy: options.proxy }
+  /** @param {{ from: Date, to: Date }} slice */
+  const bounds = (slice) => ({ from: iso(slice.from), to: iso(slice.to) })
 
-  // The summary and every slice go out together: a 30d view is six requests
+  // Every slice of both periods goes out together: a 30d view is ten requests
   // instead of one, which is what buys back the days Cloudflare's sampling drops.
-  const [summary, ...parts] = await Promise.all([
-    graphql(buildSummaryQuery({
+  const [currentParts, previousParts] = await Promise.all([
+    Promise.all(slices.map((slice) => graphql(buildSliceQuery({
       ...filter,
-      ...window,
-      previousFrom: iso(new Date(now - spec.ms * 2)),
-      previousTo: iso(from),
-    }), transport),
-    ...slices.map((slice) => graphql(buildSliceQuery({
-      ...filter,
-      from: iso(slice.from),
-      to: iso(slice.to),
+      ...bounds(slice),
       dimension: spec.dimension,
       orderBy: spec.orderBy,
-    }), transport)),
+      bots,
+    }), transport))),
+    Promise.all(previousSlices.map((slice) => graphql(buildPreviousSliceQuery({
+      ...filter,
+      ...bounds(slice),
+      bots,
+    }), transport))),
   ])
 
-  const accounts = parts.map((part) => part?.viewer?.accounts?.[0] ?? {})
-  const summaryAccount = summary?.viewer?.accounts?.[0] ?? {}
+  const parts = currentParts.map((data, index) => ({
+    account: data?.viewer?.accounts?.[0] ?? {},
+    window: bounds(slices[index]),
+  }))
+  const previousAccounts = previousParts.map((data) => data?.viewer?.accounts?.[0] ?? {})
 
   // Totals come from the slices, not from a whole-window aggregate: on a sampled
   // window that aggregate is an estimate that can disagree with the very series
   // drawn underneath it.
   const totals = { visits: 0, pageLoads: 0 }
   const seriesByBucket = new Map()
-  for (const account of accounts) {
-    totals.visits += num(account.totals?.[0]?.sum?.visits)
-    totals.pageLoads += num(account.totals?.[0]?.count)
-    for (const row of Array.isArray(account.series) ? account.series : []) {
+  for (const part of parts) {
+    totals.visits += num(part.account.totals?.[0]?.sum?.visits)
+    totals.pageLoads += num(part.account.totals?.[0]?.count)
+    for (const row of Array.isArray(part.account.series) ? part.account.series : []) {
       const key = row?.dimensions?.[spec.dimension]
       if (typeof key !== 'string' || key === '') continue
       const bucket = seriesByBucket.get(key) ?? { t: key, visits: 0, pageLoads: 0 }
@@ -352,31 +477,68 @@ export async function fetchOverview(options) {
     }
   }
   const series = [...seriesByBucket.values()].sort((left, right) => (left.t < right.t ? -1 : left.t > right.t ? 1 : 0))
-  const previousRow = summaryAccount.previous?.[0]
+
+  const previous = { visits: 0, pageLoads: 0 }
+  for (const account of previousAccounts) {
+    previous.visits += num(account.totals?.[0]?.sum?.visits)
+    previous.pageLoads += num(account.totals?.[0]?.count)
+  }
+
+  /**
+   * Quantiles never cross slices: take the newest slice that actually has
+   * samples. The window travels with the numbers so the panel can say which
+   * period they describe.
+   * @param {(account: any) => any[] | undefined} pick
+   * @returns {{ row: any, window: { from: string, to: string } } | undefined}
+   */
+  const newestSampled = (pick) => {
+    for (const part of parts) {
+      const rows = pick(part.account)
+      const row = Array.isArray(rows) ? rows[0] : undefined
+      if (num(row?.count) > 0) return { row, window: part.window }
+    }
+    return undefined
+  }
+  const vitalsSource = newestSampled((account) => account.vitals)
+  const performanceSource = newestSampled((account) => account.performance)
 
   const payload = {
-    site: { siteTag: site.siteTag, host: site.host, enabled: site.enabled },
+    site: {
+      siteTag: site.siteTag,
+      host: site.host,
+      enabled: site.enabled,
+      // When this Web Analytics site was set up, not when the domain was
+      // registered: the panel labels it as "created" for that reason.
+      ...(site.created === undefined ? {} : { created: site.created }),
+    },
     range: options.range,
+    bots,
     window,
     slices: slices.length,
+    // The cap the six lists were fetched with: the panel and the CSV export both
+    // need to know a list is truncated, not complete.
+    topLimit: TOP_LIMIT,
     totals,
-    previous: { visits: num(previousRow?.sum?.visits), pageLoads: num(previousRow?.count) },
+    previous,
+    // How much of each total is measured rather than extrapolated.
+    sampling: {
+      current: summarizeSampling(parts.map((part) => part.account.totals?.[0])),
+      previous: summarizeSampling(previousAccounts.map((account) => account.totals?.[0])),
+    },
     series,
     top: {
-      paths: mergeTop(accounts, 'paths', 'requestPath', false),
-      referrers: mergeTop(accounts, 'referrers', 'refererHost', true),
-      countries: mergeTop(accounts, 'countries', 'countryName', false),
-      browsers: mergeTop(accounts, 'browsers', 'userAgentBrowser', false),
-      devices: mergeTop(accounts, 'devices', 'deviceType', false),
-      os: mergeTop(accounts, 'os', 'userAgentOS', false),
+      paths: mergeTop(parts.map((part) => part.account), 'paths', 'requestPath', false),
+      referrers: mergeTop(parts.map((part) => part.account), 'referrers', 'refererHost', true),
+      countries: mergeTop(parts.map((part) => part.account), 'countries', 'countryName', false),
+      browsers: mergeTop(parts.map((part) => part.account), 'browsers', 'userAgentBrowser', false),
+      devices: mergeTop(parts.map((part) => part.account), 'devices', 'deviceType', false),
+      os: mergeTop(parts.map((part) => part.account), 'os', 'userAgentOS', false),
     },
-    // Quantiles do not add up across slices, so these stay whole-window: they
-    // can be a sampled estimate, but a P75 is still a P75.
-    vitals: vitalsOf(summaryAccount.vitals?.[0]),
-    performance: performanceOf(summaryAccount.performance?.[0]),
+    vitals: vitalsSource === undefined ? null : vitalsOf(vitalsSource.row, vitalsSource.window),
+    performance: performanceSource === undefined ? null : performanceOf(performanceSource.row, performanceSource.window),
     generatedAt: Date.now(),
   }
 
   overviewCache.set(cacheKey, { at: Date.now(), payload })
-  return { ...payload, cached: false }
+  return { ...payload, cached: false, cacheAgeMs: 0, cacheTtlMs: ttlMs }
 }

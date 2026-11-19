@@ -146,19 +146,65 @@ export function registerRoutes(ctx) {
   /** Last successful verification, process-local: never a credential. */
   let verifiedAt
   let lastAccess
+  /** Why the last verification attempt failed, for the settings page. */
+  let accessError
+
+  /**
+   * Verify the configured Token and remember the result, both in memory and as
+   * the non-secret snapshot in plugin state.
+   *
+   * The in-memory copy is lost on every restart, and the snapshot is only a
+   * last-known answer, so this is the one place that spends the extra API calls.
+   * @param {{ host: string, port: number } | undefined} proxy
+   * @returns {Promise<boolean>} whether verification succeeded.
+   */
+  async function refreshAccess(proxy) {
+    const token = await store.resolve()
+    if (token === undefined) return false
+    try {
+      const access = await describeAccess({ token, proxy, accountId: readState().accountId })
+      lastAccess = access
+      verifiedAt = Date.now()
+      accessError = undefined
+      writeState({ access: { accounts: access.accounts, rumSites: access.rumSites, verifiedAt } })
+      return true
+    } catch (error) {
+      accessError = error instanceof Error ? error.message : String(error)
+      return false
+    }
+  }
 
   /**
    * Shared body for configured state.
+   *
+   * Counts fall back to the persisted snapshot when this process has not verified
+   * yet; that fallback is marked `verifiedStale` so the panel can say the numbers
+   * are from an earlier run instead of pretending they were just measured.
    * @returns {Promise<Record<string, unknown>>}
    */
   async function describedState() {
     const described = await store.describe()
     const state = readState()
+    const snapshot = state.access
+    const live = lastAccess !== undefined
+    const counts = live
+      ? {
+        accounts: lastAccess.accounts,
+        rumSites: lastAccess.rumSites,
+        ...(lastAccess.capabilities === undefined ? {} : { capabilities: lastAccess.capabilities }),
+        ...(lastAccess.hint === undefined ? {} : { hint: lastAccess.hint }),
+      }
+      : snapshot === undefined
+        ? {}
+        : { accounts: snapshot.accounts, rumSites: snapshot.rumSites }
+    const verified = live ? verifiedAt : snapshot?.verifiedAt
     return {
       ...described,
       ...(state.accountId === undefined ? {} : { accountId: state.accountId }),
-      ...(verifiedAt === undefined ? {} : { verifiedAt }),
-      ...(lastAccess === undefined ? {} : lastAccess),
+      ...counts,
+      ...(verified === undefined ? {} : { verifiedAt: verified }),
+      ...(counts.accounts === undefined || live ? {} : { verifiedStale: true }),
+      ...(accessError === undefined ? {} : { accessError }),
     }
   }
 
@@ -211,6 +257,15 @@ export function registerRoutes(ctx) {
         }
         if (refuse(ctx, request, response)) return
         try {
+          const url = new URL(request.url ?? '/', 'http://localhost')
+          const force = url.searchParams.get('verify') === '1'
+          const configured = (await store.describe()).configured === true
+          // Verify when nothing at all is known (first run after a restart that
+          // has no snapshot) or when the panel explicitly asks. Otherwise answer
+          // from memory or the snapshot, so opening settings costs no API call.
+          if (configured && (force || (lastAccess === undefined && readState().access === undefined))) {
+            await refreshAccess(proxyOfRequest(request))
+          }
           sendJson(response, 200, await describedState())
         } catch (error) {
           sendFailure(response, error)
@@ -233,6 +288,9 @@ export function registerRoutes(ctx) {
             await store.clear()
             verifiedAt = undefined
             lastAccess = undefined
+            accessError = undefined
+            // The snapshot describes a Token this machine no longer holds.
+            writeState({ access: undefined })
             clearOverviewCache()
             sendJson(response, 200, await describedState())
             return
@@ -242,11 +300,17 @@ export function registerRoutes(ctx) {
           const accountId = normalizeAccountId(body.accountId)
           const proxy = proxyFromSettings(body.proxy)
           const access = await describeAccess({ token, proxy, accountId })
+          const savedAt = Date.now()
           await store.save(token)
-          writeState({ accountId, proxy: storedProxy(body.proxy) })
+          writeState({
+            accountId,
+            proxy: storedProxy(body.proxy),
+            access: { accounts: access.accounts, rumSites: access.rumSites, verifiedAt: savedAt },
+          })
           clearOverviewCache()
-          verifiedAt = Date.now()
+          verifiedAt = savedAt
           lastAccess = access
+          accessError = undefined
           sendJson(response, 200, await describedState())
         } catch (error) {
           sendFailure(response, error)
@@ -311,8 +375,11 @@ export function registerRoutes(ctx) {
           if (RANGES[range] === undefined) throw new HttpError('bad-request', '不支持的时间范围')
           const siteTag = url.searchParams.get('siteTag') ?? ''
           const fresh = url.searchParams.get('fresh') === '1'
+          // `all` includes bot traffic; every other value keeps the dashboard
+          // default, so a typo can never quietly change what a number means.
+          const bots = url.searchParams.get('bots') === 'all' ? 'all' : 'exclude'
           const context = await dataContext(request)
-          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range, fresh }))
+          sendJson(response, 200, await fetchOverview({ ...context, siteTag, range, fresh, bots }))
         } catch (error) {
           sendFailure(response, error)
         }

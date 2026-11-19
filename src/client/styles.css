@@ -32,6 +32,12 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.cfd-sub-note {
+  margin-left: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .cfd-card {
   margin-top: 16px;
   padding: 20px;
@@ -158,6 +164,17 @@
   line-height: 1.6;
   color: var(--dsw-alias-state-error-primary);
   white-space: pre-wrap;
+}
+
+.cfd-notice {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-state-warn-primary);
 }
 
 .cfd-meta {
@@ -401,6 +418,35 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.cfd-list-more {
+  margin-top: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+
+.cfd-list-more:hover {
+  text-decoration: underline;
+}
+
+.cfd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cfd-check input {
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
 }
 
 .cfd-list-head {

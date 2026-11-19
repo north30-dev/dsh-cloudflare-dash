@@ -46,6 +46,7 @@ export function SettingsView({ t, status, onStatus, onClose }) {
   const [proxyEnabled, setProxyEnabled] = useState(() => readProxyPrefs().enabled)
   const [proxyUrl, setProxyUrl] = useState(() => readProxyPrefs().url || DEFAULT_PROXY_URL)
   const [busy, setBusy] = useState(false)
+  const [verifying, setVerifying] = useState(false)
   const [probing, setProbing] = useState(false)
   const [replacing, setReplacing] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -104,6 +105,29 @@ export function SettingsView({ t, status, onStatus, onClose }) {
     }
   }
 
+  /**
+   * Ask the Host to verify the Token again. Counts and the timestamp can come
+   * from a snapshot written by an earlier run, so this is how the user replaces
+   * "last known" with "just measured" without re-entering the Token.
+   */
+  async function revalidate() {
+    setVerifying(true)
+    setNotice(null)
+    try {
+      const payload = await callApi('status?verify=1')
+      onStatus(payload)
+      if (typeof payload?.accessError === 'string') {
+        setNotice({ kind: 'error', text: payload.accessError })
+      } else {
+        setNotice({ kind: 'ok', text: t('msg.verified') })
+      }
+    } catch (error) {
+      setNotice({ kind: 'error', text: describeError(error) })
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   async function runProbe() {
     setProbing(true)
     setNotice(null)
@@ -154,7 +178,10 @@ export function SettingsView({ t, status, onStatus, onClose }) {
                 <div className="cfd-metric-label">{t('status.sites')}</div>
               </div>
               <div className="cfd-metric">
-                <div className="cfd-metric-value cfd-metric-value--small">{verifiedAt ?? t('status.neverVerified')}</div>
+                <div className="cfd-metric-value cfd-metric-value--small">
+                  {verifiedAt ?? t('status.neverVerified')}
+                  {status.verifiedStale === true ? ` · ${t('status.stale')}` : ''}
+                </div>
                 <div className="cfd-metric-label">{t('status.verified')}</div>
               </div>
             </div>
@@ -162,11 +189,15 @@ export function SettingsView({ t, status, onStatus, onClose }) {
               {status.source === 'environment' ? t('status.source.environment') : t('status.source.stored')}
               {typeof status.accountId === 'string' ? ` · Account ID: ${status.accountId}` : ''}
             </p>
+            {typeof status.accessError === 'string' ? <p className="cfd-hint cfd-warn">{status.accessError}</p> : null}
             <div className="cfd-actions">
-              <button className="cfd-btn" disabled={busy} onClick={() => setReplacing(true)}>
+              <button className="cfd-btn" disabled={busy || verifying} onClick={() => void revalidate()}>
+                {verifying ? t('action.verifying') : t('action.verify')}
+              </button>
+              <button className="cfd-btn" disabled={busy || verifying} onClick={() => setReplacing(true)}>
                 {t('action.replace')}
               </button>
-              <button className="cfd-btn" disabled={busy} onClick={() => void remove()}>
+              <button className="cfd-btn" disabled={busy || verifying} onClick={() => void remove()}>
                 {t('action.delete')}
               </button>
             </div>

@@ -1,6 +1,6 @@
 {
   "name": "dsh-cloudflare-dash",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "Cloudflare Web Analytics dashboard for DeepSeek Harness, built on the official Cloudflare API.",
   "license": "MIT",
@@ -43,7 +43,8 @@
     "icon.svg"
   ],
   "scripts": {
-    "build": "node scripts/build-client.mjs"
+    "build": "node scripts/build-client.mjs",
+    "test": "node tests/csv.mjs && node tests/format.mjs && node tests/query-shape.mjs && node tests/sampling.mjs && node tests/slice-window.mjs && node tests/state.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

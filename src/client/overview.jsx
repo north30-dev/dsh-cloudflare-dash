@@ -2,9 +2,76 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { callApi, proxyQuery } from './api.js'
 import { TrendChart } from './chart.jsx'
-import { fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
+import { buildOverviewCsv, csvFilename } from './csv.js'
+import { daysSince, fmtBucket, fmtDelta, fmtDuration, fmtInt, fmtRatio } from './format.js'
 
 const RANGE_OPTIONS = ['24h', '7d', '30d']
+
+/** Rows shown in a list card before "show all" is clicked. */
+const LIST_PREVIEW = 6
+
+/**
+ * MM-DD for an ISO instant, in the viewer's time zone.
+ * @param {string | undefined} iso
+ * @returns {string}
+ */
+function dayLabel(iso) {
+  if (typeof iso !== 'string') return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * "11-11 → 11-18", the window a quantile block actually describes.
+ * @param {{ from: string, to: string }} window
+ * @returns {string}
+ */
+function spanLabel(window) {
+  return `${dayLabel(window.from)} → ${dayLabel(window.to)}`
+}
+
+/**
+ * How old a cached payload is, in words.
+ * @param {unknown} ms
+ * @param {(key: string) => string} t
+ * @returns {string}
+ */
+function ageText(ms, t) {
+  const seconds = Math.max(0, Math.round((typeof ms === 'number' && Number.isFinite(ms) ? ms : 0) / 1000))
+  if (seconds < 90) return `${seconds} ${t('unit.secondsAgo')}`
+  return `${Math.round(seconds / 60)} ${t('unit.minutesAgo')}`
+}
+
+/**
+ * Mark a card whose numbers were extrapolated from a sample.
+ * @param {{ samples: number, estimated: number }} sampling
+ * @param {(key: string) => string} t
+ * @returns {string}
+ */
+function sampledLabel(sampling, t) {
+  return `${t('sampling.estimate')} ${fmtInt(sampling.samples)}/${fmtInt(sampling.estimated)}`
+}
+
+/**
+ * Hand a generated CSV to the browser as a download.
+ *
+ * The byte-order mark is what makes Excel read the file as UTF-8 instead of
+ * mangling any non-ASCII page or referrer name.
+ * @param {string} filename
+ * @param {string} text
+ */
+function saveCsv(filename, text) {
+  const blob = new Blob([`\ufeff${text}`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
 
 /**
  * @param {{ t: (key: string) => string, proxy: { enabled: boolean, url: string }, onOpenSettings: () => void }} props
@@ -13,6 +80,9 @@ export function Overview({ t, proxy, onOpenSettings }) {
   const [sites, setSites] = useState([])
   const [siteTag, setSiteTag] = useState('')
   const [range, setRange] = useState('7d')
+  // 'exclude' is the Cloudflare dashboard default; 'all' folds crawlers into
+  // traffic, the six lists and the deltas, never into Core Web Vitals.
+  const [bots, setBots] = useState('exclude')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -45,7 +115,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
     if (siteTag === '') return
     setLoading(true)
     setError(null)
-    const params = [`siteTag=${encodeURIComponent(siteTag)}`, `range=${range}`]
+    const params = [`siteTag=${encodeURIComponent(siteTag)}`, `range=${range}`, `bots=${bots}`]
     if (fresh) params.push('fresh=1')
     if (proxyArgs !== '') params.push(proxyArgs)
     callApi(`overview?${params.join('&')}`)
@@ -57,7 +127,7 @@ export function Overview({ t, proxy, onOpenSettings }) {
         setError(loadError.message)
         setLoading(false)
       })
-  }, [siteTag, range, proxyArgs])
+  }, [siteTag, range, bots, proxyArgs])
 
   useEffect(() => {
     load(false)
@@ -103,6 +173,9 @@ export function Overview({ t, proxy, onOpenSettings }) {
 
   const site = data?.site ?? sites.find((entry) => entry.siteTag === siteTag)
   const currentSite = site?.siteTag === siteTag ? site : undefined
+  // How long this Web Analytics site has been collecting, from the API's own
+  // `created` stamp rather than from the first bucket that has data.
+  const createdDays = daysSince(currentSite?.created)
 
   if (sitesError !== null) {
     return (
@@ -136,15 +209,36 @@ export function Overview({ t, proxy, onOpenSettings }) {
   const previous = data?.previous ?? { visits: 0, pageLoads: 0 }
   const top = data?.top ?? { paths: [], referrers: [], countries: [], browsers: [], devices: [], os: [] }
   const vitals = data?.vitals ?? null
+  const performance = data?.performance ?? null
   const visitsDelta = fmtDelta(totals.visits, previous.visits)
   const loadsDelta = fmtDelta(totals.pageLoads, previous.pageLoads)
+
+  // A long range answers its quantiles from the newest slice that has samples:
+  // a P75 cannot be summed, and a whole-window P75 on a sampled range is an
+  // extrapolation. Both cards say which window they describe.
+  const sampling = data?.sampling?.current
+  const sampled = sampling?.sampled === true
+  // The comparison period can be extrapolated even when this one is exact, and
+  // a delta computed from an estimate deserves the same warning.
+  const previousSampled = data?.sampling?.previous?.sampled === true
+  const offRange = (block) => {
+    if (block === null || block.window === undefined || data === null) return false
+    return block.window.from !== data.window.from || block.window.to !== data.window.to
+  }
+  const vitalsPartial = offRange(vitals)
+  const performancePartial = offRange(performance)
 
   return (
     <div className="cfd-page cfd-page--wide">
       <header className="cfd-topbar">
         <div>
           <h2 className="cfd-title">{t('overview.title')}</h2>
-          <p className="cfd-sub">{currentSite === undefined ? t('overview.loading') : currentSite.host}</p>
+          <p className="cfd-sub">
+            {currentSite === undefined ? t('overview.loading') : currentSite.host}
+            {createdDays === null ? null : (
+              <span className="cfd-sub-note">{`· ${t('overview.created')} ${createdDays} ${t('overview.days')}`}</span>
+            )}
+          </p>
         </div>
         <div className="cfd-toolbar">
           <select className="cfd-select" value={range} onChange={(event) => setRange(event.target.value)}>
@@ -158,7 +252,6 @@ export function Overview({ t, proxy, onOpenSettings }) {
             className="cfd-select"
             value={siteTag}
             onChange={(event) => setSiteTag(event.target.value)}
-            disabled={sites.length <= 1}
           >
             {sites.map((entry) => (
               <option key={entry.siteTag} value={entry.siteTag}>
@@ -166,8 +259,23 @@ export function Overview({ t, proxy, onOpenSettings }) {
               </option>
             ))}
           </select>
+          <label className="cfd-check">
+            <input
+              type="checkbox"
+              checked={bots === 'all'}
+              onChange={(event) => setBots(event.target.checked ? 'all' : 'exclude')}
+            />
+            {t('overview.bots')}
+          </label>
           <button className="cfd-btn" disabled={loading} onClick={() => load(true)}>
             {loading ? t('overview.refreshing') : t('overview.refresh')}
+          </button>
+          <button
+            className="cfd-btn"
+            disabled={data === null}
+            onClick={() => saveCsv(csvFilename(data), buildOverviewCsv(data))}
+          >
+            {t('action.export')}
           </button>
           <button className="cfd-btn" onClick={onOpenSettings}>
             {t('overview.settings')}
@@ -202,6 +310,19 @@ export function Overview({ t, proxy, onOpenSettings }) {
         />
       </section>
 
+      {sampled || previousSampled ? (
+        <p className="cfd-notice">
+          {sampled ? (
+            <>
+              {t('sampling.warning')}
+              {` · ${t('sampling.samples')} ${fmtInt(sampling.samples)} / ${t('sampling.estimated')} ${fmtInt(sampling.estimated)}`}
+            </>
+          ) : null}
+          {sampled && previousSampled ? ' · ' : ''}
+          {previousSampled ? t('sampling.previousNote') : ''}
+        </p>
+      ) : null}
+
       <section className="cfd-card">
         <div className="cfd-card-head">
           <h3 className="cfd-card-title">{t('chart.title')}</h3>
@@ -227,7 +348,11 @@ export function Overview({ t, proxy, onOpenSettings }) {
       <section className="cfd-card">
         <div className="cfd-card-head">
           <h3 className="cfd-card-title">{t('vitals.title')}</h3>
-          <span className="cfd-card-sub">{t('vitals.sub')}</span>
+          <span className="cfd-card-sub">
+            {t('vitals.sub')}
+            {vitalsPartial ? ` · ${t('window.label')} ${spanLabel(vitals.window)}` : ''}
+            {vitals?.sampling?.sampled === true ? ` · ${sampledLabel(vitals.sampling, t)}` : ''}
+          </span>
         </div>
         {vitals === null ? (
           <p className="cfd-hint">{t('vitals.empty')}</p>
@@ -240,21 +365,34 @@ export function Overview({ t, proxy, onOpenSettings }) {
             <VitalTile label="TTFB" value={fmtDuration(vitals.ttfb.p75)} metric={vitals.ttfb} t={t} />
           </div>
         )}
-        <p className="cfd-foot">{t('vitals.note')}</p>
+        <p className="cfd-foot">
+          {t('vitals.note')}
+          {vitalsPartial ? ` ${t('vitals.note.partial')}` : ''}
+        </p>
       </section>
 
       <section className="cfd-card">
         <div className="cfd-card-head">
           <h3 className="cfd-card-title">{t('perf.title')}</h3>
-          <span className="cfd-card-sub">{t('perf.sub')}</span>
+          <span className="cfd-card-sub">
+            {t('perf.sub')}
+            {performancePartial ? ` · ${t('window.label')} ${spanLabel(performance.window)}` : ''}
+            {performance?.sampling?.sampled === true ? ` · ${sampledLabel(performance.sampling, t)}` : ''}
+          </span>
         </div>
-        <PerformanceCard performance={data?.performance ?? null} t={t} />
+        <PerformanceCard performance={performance} t={t} partial={performancePartial} />
       </section>
 
       <footer className="cfd-foot">
         {t('overview.footer')}
+        {` · ${bots === 'all' ? t('overview.footer.botsIncluded') : t('overview.footer.botsExcluded')}`}
         {data === null ? '' : ` · ${new Date(data.generatedAt).toLocaleTimeString()}`}
-        {data?.cached === true ? ` · ${t('overview.cached')}` : ''}
+        {data === null || data.slices < 2 ? '' : ` · ${data.slices} ${t('overview.slices')}`}
+        {data === null
+          ? ''
+          : data.cached === true
+            ? ` · ${t('overview.cached')} · ${ageText(data.cacheAgeMs, t)}`
+            : ` · ${t('overview.justNow')}`}
       </footer>
     </div>
   )
@@ -286,9 +424,12 @@ function KpiCard({ label, value, delta, deltaLabel, hint }) {
  * @param {{ title: string, rows: Array<{ name: string, visits: number, pageLoads: number }>, t: (key: string) => string, directLabel?: string }} props
  */
 function ListCard({ title, rows, t, directLabel }) {
-  // The Host caps the query at 6 rows; the card scrolls instead of cropping.
-  const visible = rows
-  const max = Math.max(1, ...visible.map((row) => row.pageLoads))
+  const [expanded, setExpanded] = useState(false)
+  // The Host fetches twenty rows per dimension; six are shown until asked for,
+  // which keeps a card readable without hiding the long tail from a click.
+  const visible = expanded ? rows : rows.slice(0, LIST_PREVIEW)
+  // Scale the bars against the whole list so expanding does not rescale them.
+  const max = Math.max(1, ...rows.map((row) => row.pageLoads))
   return (
     <div className="cfd-card">
       <div className="cfd-card-head">
@@ -298,27 +439,34 @@ function ListCard({ title, rows, t, directLabel }) {
       {visible.length === 0 ? (
         <p className="cfd-hint">{t('list.empty')}</p>
       ) : (
-        <ul className="cfd-list">
-          {visible.map((row) => {
-            const name = row.name === '' ? (directLabel ?? t('list.direct')) : row.name
-            return (
-              <li className="cfd-list-row" key={`${name}-${row.name === '' ? 'direct' : ''}`}>
-                <div className="cfd-list-head">
-                  <span className="cfd-list-name" title={name}>
-                    {name}
-                  </span>
-                  <span className="cfd-list-value">{fmtInt(row.pageLoads)}</span>
-                </div>
-                <div className="cfd-bar">
-                  <div className="cfd-bar-fill" style={{ width: `${Math.max(3, (row.pageLoads / max) * 100)}%` }} />
-                </div>
-                <div className="cfd-list-sub">
-                  {fmtInt(row.visits)} {t('list.visits')}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+        <>
+          <ul className="cfd-list">
+            {visible.map((row) => {
+              const name = row.name === '' ? (directLabel ?? t('list.direct')) : row.name
+              return (
+                <li className="cfd-list-row" key={`${name}-${row.name === '' ? 'direct' : ''}`}>
+                  <div className="cfd-list-head">
+                    <span className="cfd-list-name" title={name}>
+                      {name}
+                    </span>
+                    <span className="cfd-list-value">{fmtInt(row.pageLoads)}</span>
+                  </div>
+                  <div className="cfd-bar">
+                    <div className="cfd-bar-fill" style={{ width: `${Math.max(3, (row.pageLoads / max) * 100)}%` }} />
+                  </div>
+                  <div className="cfd-list-sub">
+                    {fmtInt(row.visits)} {t('list.visits')}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+          {rows.length <= LIST_PREVIEW ? null : (
+            <button type="button" className="cfd-list-more" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? t('list.collapse') : `${t('list.expand')} · ${rows.length}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   )
@@ -355,9 +503,10 @@ function VitalTile({ label, value, metric, t }) {
  * @param {{
  *   performance: { samples: number, pageLoad: number | null, phases: Record<string, number | null> } | null,
  *   t: (key: string) => string,
+ *   partial?: boolean,
  * }} props
  */
-function PerformanceCard({ performance, t }) {
+function PerformanceCard({ performance, t, partial }) {
   if (performance === null) return <p className="cfd-hint">{t('perf.empty')}</p>
   const phases = [
     ['dns', t('perf.dns')],
@@ -390,7 +539,10 @@ function PerformanceCard({ performance, t }) {
           </li>
         ))}
       </ul>
-      <p className="cfd-foot">{t('perf.note')}</p>
+      <p className="cfd-foot">
+        {t('perf.note')}
+        {partial === true ? ` ${t('perf.note.partial')}` : ''}
+      </p>
     </div>
   )
 }
