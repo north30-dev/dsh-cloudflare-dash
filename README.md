@@ -82,6 +82,8 @@ Token 保存在 DSH 凭据库（`~/.credentials.yaml` 的记录 `dsh-cloudflare-
 - 也可以改用它支持的备用来源：启动环境变量 `CLOUDFLARE_API_TOKEN`（优先级低于 UI 保存的记录）。
 - 发现安全问题请**私下**报告，不要开公开 issue，方式见 [`SECURITY.md`](SECURITY.md)。
 
+**关于市场的能力标签**：插件市场会用静态扫描给每个插件列出「它碰了什么」。本插件会被标成 `credentials` + `network`（读取凭据并可联网），部分市场还会显示一条「读凭据且能联网」的红线提示。这不是判定，是事实披露——读 Token 再调 `api.cloudflare.com` 正是它工作的前提；`fs-write` 来自写 `state.json`（Account ID 与非机密偏好），`env` 来自上面那条环境变量支持。具体边界见 [`SECURITY.md`](SECURITY.md)。
+
 ## 代理
 
 面板里可开启 HTTP 代理（`http://host:port`，CONNECT 隧道），用于直连 Cloudflare API 不稳定的网络。设置存在浏览器 localStorage，属于非机密偏好；代理地址会随每次请求传给 Host，同时写入 `state.json`，这样 agent 工具与看板走同一条网络路径。
