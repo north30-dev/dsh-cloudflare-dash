@@ -38,6 +38,7 @@
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
+    "!docs/ROADMAP.md",
     "assets",
     "screenshots.json",
     "icon.svg"

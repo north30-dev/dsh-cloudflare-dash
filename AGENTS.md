@@ -65,6 +65,7 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 | `src/client/` | 浏览器侧：`index.jsx` 注册、`app.jsx` 控制器、`overview.jsx` 看板、`settings.jsx` 配置、`chart.jsx`、`csv.js`（导出）、`format.js`、`api.js`、`locale.js`、`styles.css` |
 | `dist/client.js` | 构建产物（提交） |
 | `tests/` | 纯函数单测：`tests/slice-window.mjs`（切片终止性）、`tests/sampling.mjs`（采样摘要）、`tests/query-shape.mjs`（bot 过滤子句 + Top 榜合并）、`tests/csv.mjs`（导出格式与转义）、`tests/state.mjs`（验证快照读写，用临时 `DSH_HOME`）。`pnpm test` 跑全部 |
+| `docs/ROADMAP.md` | **下一版开发计划（v0.6.0 一次装完 A/B/C 三批）**：任务清单、待验证 spike、明确不做的方向。开工前必读 |
 
 ## 硬性约束
 
@@ -151,4 +152,5 @@ plugin_manager install_bundle  target=<本目录绝对路径>
 - ✅ M6 采样透明化：分位数改为「每个切片自带、取最新有样本的那片」并标注窗口；上一周期独立切片网格，环比精确；`confidence.count.sampleSize` 判断采样，命中时面板顶部提示（`summarizeSampling` + `tests/sampling.mjs`）
 - ✅ M7 视角控制：Top 榜每维度取 20 行、默认显示 6 行可展开（`mergeTop` + `tests/query-shape.mjs`）；bot 口径开关（`botFilter`，只影响总量/趋势/榜单/环比，缓存键带上 `bots`）
 - ✅ M8 导出 CSV：纯客户端 `csv.js`，长表 `section,key,metric,value`，含 `meta`（站点/范围/口径/窗口/采样/`top_limit`），字段过公式注入防护（`tests/csv.mjs`）
-- ⬜ 发布：首次 tag（`release.yml` 已就绪，需先 bump 到 0.5.0 并合并到 main）、收录到插件目录
+- ✅ 发布：`v0.5.0` 已打 tag 并发布到 npm（`dsh-cloudflare-dash@0.5.0`，Trusted Publishing）；收录到插件目录待确认
+- 📋 **下一版计划见 [`docs/ROADMAP.md`](docs/ROADMAP.md)**：0.6.0 一个版本装完「上手摩擦 + 多站点/自定义范围/环比 + 页面级下钻」，另含 4 项低成本分发动作。开工前先读它，再回到本文件的硬性约束
